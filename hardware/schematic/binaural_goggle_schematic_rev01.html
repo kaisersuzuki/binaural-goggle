@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Binaural Beat Goggle — Circuit Schematic</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d0f0e;
+    font-family: 'Courier New', monospace;
+    color: #c8d5b0;
+    padding: 20px;
+  }
+  h1 {
+    font-size: 13px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #7ab87a;
+    margin-bottom: 4px;
+    padding-left: 8px;
+    border-left: 3px solid #7ab87a;
+  }
+  .subtitle {
+    font-size: 10px;
+    color: #556655;
+    margin-bottom: 16px;
+    padding-left: 12px;
+    letter-spacing: 1px;
+  }
+  svg {
+    display: block;
+    background: #0d0f0e;
+  }
+  .legend {
+    margin-top: 16px;
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    padding: 12px;
+    border: 1px solid #1e2a1e;
+  }
+  .legend-item {
+    font-size: 10px;
+    color: #7a9a7a;
+    letter-spacing: 1px;
+  }
+  .legend-item span {
+    display: inline-block;
+    width: 24px;
+    height: 2px;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+</style>
+</head>
+<body>
+<h1>Binaural Beat + LED Goggle Controller</h1>
+<div class="subtitle">dsPIC30F4013 · AD5220 · NTE74HC14 · NTE941M · MAX603 — schematic rev 0.1</div>
+
+<svg viewBox="0 0 1280 900" width="1280" height="900" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Grid pattern -->
+    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+      <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#131a13" stroke-width="0.5"/>
+    </pattern>
+    <!-- Arrowhead -->
+    <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+      <path d="M 0 0 L 6 3 L 0 6 Z" fill="#3a5c3a"/>
+    </marker>
+    <!-- Power arrow -->
+    <marker id="parrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+      <path d="M 0 0 L 6 3 L 0 6 Z" fill="#8a6a2a"/>
+    </marker>
+  </defs>
+
+  <!-- Background grid -->
+  <rect width="1280" height="900" fill="url(#grid)"/>
+
+  <!-- ═══════════════════════════════════════════════════════
+       RAILS (power and ground lines)
+  ═══════════════════════════════════════════════════════ -->
+  <!-- 3.3V rail (top horizontal) -->
+  <line x1="60" y1="40" x2="1220" y2="40" stroke="#8a6a2a" stroke-width="2" stroke-dasharray="8,3"/>
+  <text x="65" y="35" font-size="9" fill="#8a6a2a" font-family="Courier New">+3.3V</text>
+  <text x="600" y="35" font-size="9" fill="#8a6a2a" font-family="Courier New">+3.3V RAIL</text>
+
+  <!-- 5V rail (second horizontal) -->
+  <line x1="60" y1="58" x2="1220" y2="58" stroke="#a07030" stroke-width="2" stroke-dasharray="8,3"/>
+  <text x="65" y="53" font-size="9" fill="#a07030" font-family="Courier New">+5V</text>
+
+  <!-- GND rail (bottom horizontal) -->
+  <line x1="60" y1="870" x2="1220" y2="870" stroke="#2a4a2a" stroke-width="2"/>
+  <text x="65" y="882" font-size="9" fill="#3a6a3a" font-family="Courier New">GND</text>
+  <text x="600" y="882" font-size="9" fill="#3a6a3a" font-family="Courier New">GND RAIL</text>
+
+  <!-- ═══════════════════════════════════════════════════════
+       BLOCK 1: POWER SUPPLY (MAX603 LDO)
+  ═══════════════════════════════════════════════════════ -->
+  <rect x="40" y="80" width="160" height="200" rx="2" fill="#0a1a0a" stroke="#2a4a2a" stroke-width="1.5"/>
+  <text x="120" y="97" font-size="9" fill="#7ab87a" text-anchor="middle" font-family="Courier New" letter-spacing="1">POWER</text>
+  <line x1="40" y1="102" x2="200" y2="102" stroke="#2a4a2a" stroke-width="0.5"/>
+
+  <!-- Battery symbol -->
+  <text x="55" y="125" font-size="8" fill="#556655" font-family="Courier New">9V BATT</text>
+  <line x1="55" y1="130" x2="75" y2="130" stroke="#6a8a6a" stroke-width="1.5"/>
+  <line x1="60" y1="124" x2="60" y2="136" stroke="#6a8a6a" stroke-width="2"/>
+  <line x1="70" y1="127" x2="70" y2="133" stroke="#6a8a6a" stroke-width="1.5"/>
+  <line x1="75" y1="130" x2="90" y2="130" stroke="#6a8a6a" stroke-width="1.5"/>
+  <text x="92" y="133" font-size="8" fill="#556655" font-family="Courier New">+</text>
+
+  <!-- MAX603 3.3V -->
+  <rect x="55" y="148" width="90" height="36" rx="2" fill="#111e11" stroke="#3a6a3a" stroke-width="1"/>
+  <text x="100" y="162" font-size="8" fill="#7ab87a" text-anchor="middle" font-family="Courier New">MAX603</text>
+  <text x="100" y="173" font-size="7" fill="#556655" text-anchor="middle" font-family="Courier New">3.3V / 500mA</text>
+  <!-- IN pin -->
+  <line x1="55" y1="166" x2="40" y2="166" stroke="#6a8a6a" stroke-width="1.5"/>
+  <text x="28" y="169" font-size="7" fill="#556655" font-family="Courier New">IN</text>
+  <!-- OUT pin → 3.3V rail -->
+  <line x1="145" y1="166" x2="200" y2="166" stroke="#8a6a2a" stroke-width="1.5"/>
+  <line x1="200" y1="166" x2="200" y2="40" stroke="#8a6a2a" stroke-width="1.5"/>
+  <text x="152" y="163" font-size="7" fill="#8a6a2a" font-family="Courier New">3.3V</text>
+  <!-- Decoupling caps -->
+  <text x="55" y="205" font-size="7" fill="#445544" font-family="Courier New">C1 100nF</text>
+  <text x="55" y="218" font-size="7" fill="#445544" font-family="Courier New">C2 10µF</text>
+  <text x="55" y="231" font-size="7" fill="#445544" font-family="Courier New">(bypass caps)</text>
+  <!-- GND drop -->
+  <line x1="100" y1="184" x2="100" y2="250" stroke="#2a4a2a" stroke-width="1.5"/>
+  <line x1="100" y1="250" x2="100" y2="870" stroke="#2a4a2a" stroke-width="1" stroke-dasharray="4,4"/>
+
+  <!-- MAX603 5V (second LDO for LEDs + op-amp) -->
+  <rect x="55" y="248" width="90" height="36" rx="2" fill="#111e11" stroke="#3a6a3a" stroke-width="1"/>
+  <text x="100" y="262" font-size="8" fill="#7ab87a" text-anchor="middle" font-family="Courier New">MAX603</text>
+  <text x="100" y="273" font-size="7" fill="#556655" text-anchor="middle" font-family="Courier New">5.0V (SET pin)</text>
+  <line x1="145" y1="266" x2="200" y2="266" stroke="#a07030" stroke-width="1.5"/>
+  <line x1="200" y1="266" x2="200" y2="58" stroke="#a07030" stroke-width="1.5"/>
+  <text x="152" y="263" font-size="7" fill="#a07030" font-family="Courier New">5V</text>
+
+  <!-- MAX8212 battery monitor -->
+  <rect x="55" y="305" width="90" height="32" rx="2" fill="#111811" stroke="#2a4a2a" stroke-width="1"/>
+  <text x="100" y="319" font-size="8" fill="#6a9a6a" text-anchor="middle" font-family="Courier New">MAX8212</text>
+  <text x="100" y="330" font-size="7" fill="#445544" text-anchor="middle" font-family="Courier New">BATT MONITOR</text>
+  <text x="55" y="350" font-size="7" fill="#334433" font-family="Courier New">→ GPIO warn pin</text>
+
+  <!-- ═══════════════════════════════════════════════════════
+       BLOCK 2: dsPIC30F4013 (CENTER)
+  ═══════════════════════════════════════════════════════ -->
+  <rect x="380" y="90" width="280" height="680" rx="3" fill="#081408" stroke="#3a7a3a" stroke-width="2"/>
+  <text x="520" y="110" font-size="10" fill="#7ab87a" text-anchor="middle" font-family="Courier New" letter-spacing="2">dsPIC30F4013</text>
+  <line x1="380" y1="118" x2="660" y2="118" stroke="#3a7a3a" stroke-width="0.5"/>
+  <text x="520" y="131" font-size="8" fill="#3a6a3a" text-anchor="middle" font-family="Courier New">40-DIP · 20MHz Fcy · 48KB Flash</text>
+
+  <!-- PIN LABELS — Left side of dsPIC (inputs/power) -->
+  <!-- VDD -->
+  <line x1="380" y1="160" x2="340" y2="160" stroke="#8a6a2a" stroke-width="1.5"/>
+  <text x="335" y="163" font-size="8" fill="#8a6a2a" text-anchor="end" font-family="Courier New">VDD(3.3V)</text>
+  <circle cx="340" cy="160" r="2.5" fill="#8a6a2a"/>
+  <!-- Connect VDD to 3.3V rail -->
+  <line x1="340" y1="160" x2="340" y2="40" stroke="#8a6a2a" stroke-width="1" stroke-dasharray="4,3"/>
+
+  <!-- VSS/GND -->
+  <line x1="380" y1="180" x2="340" y2="180" stroke="#2a4a2a" stroke-width="1.5"/>
+  <text x="335" y="183" font-size="8" fill="#3a6a3a" text-anchor="end" font-family="Courier New">VSS(GND)</text>
+  <circle cx="340" cy="180" r="2.5" fill="#3a6a3a"/>
+  <line x1="340" y1="180" x2="340" y2="870" stroke="#2a4a2a" stroke-width="1" stroke-dasharray="4,3"/>
+
+  <!-- MCLR -->
+  <line x1="380" y1="200" x2="340" y2="200" stroke="#4a6a4a" stroke-width="1.5"/>
+  <text x="335" y="203" font-size="8" fill="#4a6a4a" text-anchor="end" font-family="Courier New">/MCLR</text>
+  <text x="260" y="203" font-size="7" fill="#334433" font-family="Courier New">10kΩ → 3.3V</text>
+
+  <!-- OSC1/OSC2 -->
+  <line x1="380" y1="220" x2="340" y2="220" stroke="#5a7a5a" stroke-width="1.5"/>
+  <text x="335" y="223" font-size="8" fill="#5a7a5a" text-anchor="end" font-family="Courier New">OSC1</text>
+  <line x1="380" y1="238" x2="340" y2="238" stroke="#5a7a5a" stroke-width="1.5"/>
+  <text x="335" y="241" font-size="8" fill="#5a7a5a" text-anchor="end" font-family="Courier New">OSC2</text>
+  <!-- Crystal symbol -->
+  <rect x="290" y="215" width="12" height="28" rx="0" fill="#0a180a" stroke="#5a7a5a" stroke-width="1"/>
+  <line x1="286" y1="225" x2="290" y2="225" stroke="#5a7a5a" stroke-width="1"/>
+  <line x1="286" y1="233" x2="290" y2="233" stroke="#5a7a5a" stroke-width="1"/>
+  <text x="278" y="222" font-size="7" fill="#3a5a3a" text-anchor="middle" font-family="Courier New">10</text>
+  <text x="278" y="232" font-size="7" fill="#3a5a3a" text-anchor="middle" font-family="Courier New">MHz</text>
+
+  <!-- PIN LABELS — Right side of dsPIC (outputs) -->
+  <!-- OC1 — PWM Left Audio -->
+  <line x1="660" y1="160" x2="700" y2="160" stroke="#4a9a6a" stroke-width="2"/>
+  <text x="665" y="155" font-size="8" fill="#4a9a6a" font-family="Courier New">OC1/RD0</text>
+  <text x="665" y="167" font-size="7" fill="#2a5a3a" font-family="Courier New">PWM-L ←</text>
+
+  <!-- OC2 — PWM Right Audio -->
+  <line x1="660" y1="188" x2="700" y2="188" stroke="#4a9a6a" stroke-width="2"/>
+  <text x="665" y="183" font-size="8" fill="#4a9a6a" font-family="Courier New">OC2/RD1</text>
+  <text x="665" y="195" font-size="7" fill="#2a5a3a" font-family="Courier New">PWM-R ←</text>
+
+  <!-- SPI (SCK, SDO for AD5220) -->
+  <line x1="660" y1="240" x2="700" y2="240" stroke="#6a8a9a" stroke-width="1.5"/>
+  <text x="665" y="237" font-size="8" fill="#6a8a9a" font-family="Courier New">SCK1/RF6</text>
+  <line x1="660" y1="258" x2="700" y2="258" stroke="#6a8a9a" stroke-width="1.5"/>
+  <text x="665" y="255" font-size="8" fill="#6a8a9a" font-family="Courier New">SDO1/RF7</text>
+  <line x1="660" y1="276" x2="700" y2="276" stroke="#6a8a9a" stroke-width="1.5"/>
+  <text x="665" y="273" font-size="8" fill="#6a8a9a" font-family="Courier New">RB2 /CS</text>
+  <line x1="660" y1="294" x2="700" y2="294" stroke="#6a8a9a" stroke-width="1.5"/>
+  <text x="665" y="291" font-size="8" fill="#6a8a9a" font-family="Courier New">RB3 U/D</text>
+  <text x="665" y="310" font-size="7" fill="#3a5a6a" font-family="Courier New">← AD5220</text>
+
+  <!-- LED control GPIO -->
+  <line x1="660" y1="360" x2="700" y2="360" stroke="#9a7a4a" stroke-width="1.5"/>
+  <text x="665" y="357" font-size="8" fill="#9a7a4a" font-family="Courier New">RG2 L-EYE</text>
+  <line x1="660" y1="378" x2="700" y2="378" stroke="#9a7a4a" stroke-width="1.5"/>
+  <text x="665" y="375" font-size="8" fill="#9a7a4a" font-family="Courier New">RG3 R-EYE</text>
+  <text x="665" y="395" font-size="7" fill="#5a4a2a" font-family="Courier New">← LED DRIVER</text>
+
+  <!-- Internal annotations -->
+  <text x="395" y="460" font-size="8" fill="#2a4a2a" font-family="Courier New">Timer1 ISR @ 8kHz</text>
+  <text x="395" y="475" font-size="8" fill="#2a4a2a" font-family="Courier New">DDS sine gen (L + R)</text>
+  <text x="395" y="490" font-size="8" fill="#2a4a2a" font-family="Courier New">Beat pattern sequencer</text>
+  <text x="395" y="505" font-size="8" fill="#2a4a2a" font-family="Courier New">LED sync controller</text>
+  <text x="395" y="530" font-size="7" fill="#1a3a1a" font-family="Courier New">Phase acc: 32-bit DDS</text>
+  <text x="395" y="543" font-size="7" fill="#1a3a1a" font-family="Courier New">Sin table: 256 entries</text>
+  <text x="395" y="556" font-size="7" fill="#1a3a1a" font-family="Courier New">Fclock: 20MHz (10MHz×PLL4)</text>
+  <text x="395" y="569" font-size="7" fill="#1a3a1a" font-family="Courier New">Beat: 4Hz / 8Hz / 2Hz</text>
+
+  <!-- ═══════════════════════════════════════════════════════
+       BLOCK 3: AUDIO OUTPUT PATH (LEFT CHANNEL)
+  ═══════════════════════════════════════════════════════ -->
+  <rect x="730" y="90" width="480" height="280" rx="2" fill="#080f10" stroke="#2a5a6a" stroke-width="1.5"/>
+  <text x="970" y="107" font-size="9" fill="#6ab0c0" text-anchor="middle" font-family="Courier New" letter-spacing="1">AUDIO OUTPUT PATH (×2 CHANNELS)</text>
+  <line x1="730" y1="114" x2="1210" y2="114" stroke="#2a5a6a" stroke-width="0.5"/>
+
+  <!-- ── Left channel signal path ── -->
+  <text x="742" y="135" font-size="8" fill="#4a7a8a" font-family="Courier New">LEFT CHANNEL</text>
+
+  <!-- OC1 to R1 -->
+  <line x1="700" y1="160" x2="780" y2="160" stroke="#4a9a6a" stroke-width="2"/>
+
+  <!-- R1 10kΩ -->
+  <rect x="780" y="152" width="40" height="16" rx="2" fill="#0a1a10" stroke="#3a7a5a" stroke-width="1"/>
+  <text x="800" y="163" font-size="8" fill="#4a9a6a" text-anchor="middle" font-family="Courier New">10k</text>
+  <!-- wire after R1 -->
+  <line x1="820" y1="160" x2="860" y2="160" stroke="#4a9a6a" stroke-width="1.5"/>
+  <!-- C1 10nF to GND -->
+  <line x1="840" y1="160" x2="840" y2="186" stroke="#4a9a6a" stroke-width="1.5"/>
+  <line x1="834" y1="186" x2="846" y2="186" stroke="#6aaa8a" stroke-width="2"/>
+  <line x1="834" y1="191" x2="846" y2="191" stroke="#6aaa8a" stroke-width="2"/>
+  <line x1="840" y1="191" x2="840" y2="208" stroke="#2a4a2a" stroke-width="1.5"/>
+  <text x="849" y="192" font-size="7" fill="#3a6a4a" font-family="Courier New">10nF</text>
+  <!-- GND drop -->
+  <line x1="840" y1="208" x2="840" y2="215" stroke="#2a4a2a" stroke-width="1.5"/>
+  <text x="829" y="225" font-size="8" fill="#3a6a3a" font-family="Courier New">⏚</text>
+
+  <!-- R2 10kΩ -->
+  <rect x="860" y="152" width="40" height="16" rx="2" fill="#0a1a10" stroke="#3a7a5a" stroke-width="1"/>
+  <text x="880" y="163" font-size="8" fill="#4a9a6a" text-anchor="middle" font-family="Courier New">10k</text>
+  <line x1="900" y1="160" x2="940" y2="160" stroke="#4a9a6a" stroke-width="1.5"/>
+  <!-- C2 10nF to GND -->
+  <line x1="920" y1="160" x2="920" y2="186" stroke="#4a9a6a" stroke-width="1.5"/>
+  <line x1="914" y1="186" x2="926" y2="186" stroke="#6aaa8a" stroke-width="2"/>
+  <line x1="914" y1="191" x2="926" y2="191" stroke="#6aaa8a" stroke-width="2"/>
+  <line x1="920" y1="191" x2="920" y2="208" stroke="#2a4a2a" stroke-width="1.5"/>
+  <text x="929" y="192" font-size="7" fill="#3a6a4a" font-family="Courier New">10nF</text>
+  <line x1="920" y1="208" x2="920" y2="215" stroke="#2a4a2a" stroke-width="1.5"/>
+  <text x="909" y="225" font-size="8" fill="#3a6a3a" font-family="Courier New">⏚</text>
+  <text x="800" y="240" font-size="7" fill="#2a5a4a" text-anchor="middle" font-family="Courier New">2nd-order RC LPF  Fc≈1.6kHz</text>
+
+  <!-- NTE941M Op-Amp (unity gain buffer) -->
+  <!-- Triangle symbol -->
+  <polygon points="940,145 940,177 980,161" fill="#0c1c14" stroke="#4a8a6a" stroke-width="1.5"/>
+  <text x="952" y="158" font-size="7" fill="#4a8a6a" font-family="Courier New">+</text>
+  <text x="952" y="170" font-size="7" fill="#4a8a6a" font-family="Courier New">−</text>
+  <!-- Feedback: output to − input -->
+  <line x1="980" y1="161" x2="995" y2="161" stroke="#4a9a6a" stroke-width="1.5"/>
+  <line x1="995" y1="161" x2="995" y2="174" stroke="#4a9a6a" stroke-width="1.5"/>
+  <line x1="940" y1="174" x2="995" y2="174" stroke="#4a9a6a" stroke-width="1.5"/>
+  <text x="955" y="143" font-size="7" fill="#3a6a5a" font-family="Courier New">NTE941M</text>
+  <text x="955" y="138" font-size="6" fill="#2a4a3a" font-family="Courier New">(unity buffer)</text>
+  <!-- VCC/VEE for opamp -->
+  <line x1="960" y1="145" x2="960" y2="135" stroke="#a07030" stroke-width="1"/>
+  <text x="963" y="133" font-size="6" fill="#a07030" font-family="Courier New">+5V</text>
+  <line x1="960" y1="177" x2="960" y2="187" stroke="#2a4a2a" stroke-width="1"/>
+  <text x="963" y="196" font-size="6" fill="#3a6a3a" font-family="Courier New">GND</text>
+
+  <!-- Coupling cap C3 10µF -->
+  <line x1="995" y1="161" x2="1030" y2="161" stroke="#4a9a6a" stroke-width="1.5"/>
+  <line x1="1030" y1="154" x2="1030" y2="168" stroke="#6aaa8a" stroke-width="2.5"/>
+  <line x1="1035" y1="154" x2="1035" y2="168" stroke="#6aaa8a" stroke-width="2"/>
+  <line x1="1035" y1="161" x2="1065" y2="161" stroke="#4a9a6a" stroke-width="1.5"/>
+  <text x="1029" y="178" font-size="7" fill="#3a6a4a" font-family="Courier New">10µF</text>
+  <text x="1018" y="187" font-size="6" fill="#2a4a3a" font-family="Courier New">(DC block)</text>
+
+  <!-- 3.5mm jack symbol -->
+  <circle cx="1110" cy="161" r="22" fill="#0c180c" stroke="#4a8a5a" stroke-width="1.5"/>
+  <circle cx="1110" cy="161" r="8" fill="#0a120a" stroke="#3a6a3a" stroke-width="1"/>
+  <text x="1110" y="158" font-size="7" fill="#6aaa6a" text-anchor="middle" font-family="Courier New">3.5mm</text>
+  <text x="1110" y="168" font-size="7" fill="#6aaa6a" text-anchor="middle" font-family="Courier New">JACK</text>
+  <!-- TIP (Left) -->
+  <line x1="1065" y1="161" x2="1088" y2="161" stroke="#4a9a6a" stroke-width="1.5"/>
+  <text x="1070" y="158" font-size="6" fill="#3a7a4a" font-family="Courier New">TIP(L)</text>
+  <!-- RING (Right) comes in from below, shown as label -->
+  <text x="1080" y="185" font-size="6" fill="#3a7a4a" font-family="Courier New">RING(R)→</text>
+  <text x="1140" y="151" font-size="7" fill="#4a7a4a" font-family="Courier New">→HEADPHONES</text>
+  <!-- Shield/GND -->
+  <line x1="1110" y1="183" x2="1110" y2="215" stroke="#2a4a2a" stroke-width="1"/>
+  <text x="1099" y="225" font-size="8" fill="#3a6a3a" font-family="Courier New">⏚</text>
+
+  <!-- ── Right channel (mirrored, offset) ── -->
+  <text x="742" y="255" font-size="8" fill="#4a7a8a" font-family="Courier New">RIGHT CHANNEL  (identical path — OC2 → R3/C3 → R4/C4 → NTE941M → RING)</text>
+  <line x1="742" y1="260" x2="1200" y2="260" stroke="#1a3a4a" stroke-width="0.5" stroke-dasharray="3,3"/>
+  <text x="742" y="275" font-size="7" fill="#2a5a6a" font-family="Courier New">OC2/RD1 ──[10kΩ]──┬──[10kΩ]──┬── NTE941M(unity) ──[10µF]── RING</text>
+  <text x="742" y="290" font-size="7" fill="#2a5a6a" font-family="Courier New">                  │          │</text>
+  <text x="742" y="305" font-size="7" fill="#2a5a6a" font-family="Courier New">                [10nF]     [10nF]</text>
+  <text x="742" y="320" font-size="7" fill="#2a5a6a" font-family="Courier New">                  ⏚          ⏚</text>
+  <text x="742" y="345" font-size="7" fill="#1a4a5a" font-family="Courier New">Note: NTE941M is a 741-class op-amp. Works for headphone drive.</text>
+  <text x="742" y="358" font-size="7" fill="#1a4a5a" font-family="Courier New">Upgrade to TPA6132A2 for cleaner output on SMD board revision.</text>
+
+  <!-- ═══════════════════════════════════════════════════════
+       BLOCK 4: AD5220 DIGITAL POTENTIOMETER (VOLUME)
+  ═══════════════════════════════════════════════════════ -->
+  <rect x="730" y="390" width="220" height="160" rx="2" fill="#08100a" stroke="#2a5a3a" stroke-width="1.5"/>
+  <text x="840" y="407" font-size="9" fill="#6ab07a" text-anchor="middle" font-family="Courier New" letter-spacing="1">AD5220 VOLUME</text>
+  <line x1="730" y1="414" x2="950" y2="414" stroke="#2a5a3a" stroke-width="0.5"/>
+
+  <!-- AD5220 IC box -->
+  <rect x="790" y="425" width="100" height="60" rx="2" fill="#0c180c" stroke="#3a7a4a" stroke-width="1"/>
+  <text x="840" y="445" font-size="8" fill="#6ab07a" text-anchor="middle" font-family="Courier New">AD5220</text>
+  <text x="840" y="457" font-size="7" fill="#3a6a4a" text-anchor="middle" font-family="Courier New">64-step SPI</text>
+  <text x="840" y="469" font-size="7" fill="#3a6a4a" text-anchor="middle" font-family="Courier New">digital pot</text>
+  <!-- SPI pins -->
+  <line x1="790" y1="435" x2="762" y2="435" stroke="#6a8a9a" stroke-width="1.5"/>
+  <text x="757" y="438" font-size="7" fill="#6a8a9a" text-anchor="end" font-family="Courier New">CLK←</text>
+  <line x1="790" y1="448" x2="762" y2="448" stroke="#6a8a9a" stroke-width="1.5"/>
+  <text x="757" y="451" font-size="7" fill="#6a8a9a" text-anchor="end" font-family="Courier New">DI←</text>
+  <line x1="790" y1="461" x2="762" y2="461" stroke="#6a8a9a" stroke-width="1.5"/>
+  <text x="757" y="464" font-size="7" fill="#6a8a9a" text-anchor="end" font-family="Courier New">/CS←</text>
+  <line x1="790" y1="474" x2="762" y2="474" stroke="#6a8a9a" stroke-width="1.5"/>
+  <text x="757" y="477" font-size="7" fill="#6a8a9a" text-anchor="end" font-family="Courier New">U/D←</text>
+  <!-- SPI lines back to dsPIC region notation -->
+  <text x="742" y="498" font-size="7" fill="#2a4a5a" font-family="Courier New">← from dsPIC SCK1/SDO1/RB2/RB3</text>
+  <!-- Wiper output to audio path -->
+  <line x1="890" y1="455" x2="930" y2="455" stroke="#4a7a5a" stroke-width="1.5"/>
+  <text x="932" y="458" font-size="7" fill="#4a7a5a" font-family="Courier New">WIPER→audio</text>
+  <text x="742" y="535" font-size="7" fill="#2a5a3a" font-family="Courier New">64 steps · SPI: pulse /CS with U/D set</text>
+  <text x="742" y="548" font-size="7" fill="#2a5a3a" font-family="Courier New">Controls output level in RC filter chain</text>
+
+  <!-- ═══════════════════════════════════════════════════════
+       BLOCK 5: LED DRIVER CIRCUIT
+  ═══════════════════════════════════════════════════════ -->
+  <rect x="730" y="570" width="480" height="280" rx="2" fill="#100a06" stroke="#5a4a1a" stroke-width="1.5"/>
+  <text x="970" y="588" font-size="9" fill="#c0a060" text-anchor="middle" font-family="Courier New" letter-spacing="1">LED DRIVER (×2 EYES)</text>
+  <line x1="730" y1="595" x2="1210" y2="595" stroke="#5a4a1a" stroke-width="0.5"/>
+
+  <!-- Left eye driver chain -->
+  <text x="742" y="614" font-size="8" fill="#9a7a3a" font-family="Courier New">LEFT EYE</text>
+
+  <!-- GPIO RG2 -->
+  <line x1="700" y1="360" x2="720" y2="360" stroke="#9a7a4a" stroke-width="1.5"/>
+  <line x1="720" y1="360" x2="720" y2="630" stroke="#9a7a4a" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <line x1="720" y1="630" x2="760" y2="630" stroke="#9a7a4a" stroke-width="1.5"/>
+  <text x="742" y="626" font-size="7" fill="#6a5a2a" font-family="Courier New">RG2</text>
+
+  <!-- 1kΩ base resistor -->
+  <rect x="760" y="622" width="36" height="14" rx="1" fill="#100a06" stroke="#7a6a2a" stroke-width="1"/>
+  <text x="778" y="632" font-size="7" fill="#9a7a3a" text-anchor="middle" font-family="Courier New">1kΩ</text>
+  <line x1="796" y1="629" x2="830" y2="629" stroke="#9a7a4a" stroke-width="1.5"/>
+
+  <!-- NTE74HC14 Schmitt inverter -->
+  <polygon points="830,618 830,640 858,629" fill="#120e08" stroke="#8a7a3a" stroke-width="1.5"/>
+  <circle cx="862" cy="629" r="4" fill="#120e08" stroke="#8a7a3a" stroke-width="1.5"/>
+  <text x="837" y="653" font-size="7" fill="#6a5a2a" font-family="Courier New">74HC14</text>
+  <text x="837" y="663" font-size="6" fill="#4a3a1a" font-family="Courier New">(Schmitt)</text>
+  <!-- Inverter output -->
+  <line x1="866" y1="629" x2="900" y2="629" stroke="#9a7a4a" stroke-width="1.5"/>
+  <!-- 2nd inverter to restore polarity -->
+  <polygon points="900,618 900,640 928,629" fill="#120e08" stroke="#8a7a3a" stroke-width="1.5"/>
+  <circle cx="932" cy="629" r="4" fill="#120e08" stroke="#8a7a3a" stroke-width="1.5"/>
+  <line x1="936" y1="629" x2="965" y2="629" stroke="#9a7a4a" stroke-width="1.5"/>
+  <text x="904" y="653" font-size="6" fill="#4a3a1a" font-family="Courier New">(2nd = restore)</text>
+
+  <!-- 1kΩ to 2N3904 base -->
+  <rect x="965" y="622" width="36" height="14" rx="1" fill="#100a06" stroke="#7a6a2a" stroke-width="1"/>
+  <text x="983" y="632" font-size="7" fill="#9a7a3a" text-anchor="middle" font-family="Courier New">1kΩ</text>
+  <line x1="1001" y1="629" x2="1030" y2="629" stroke="#9a7a4a" stroke-width="1.5"/>
+
+  <!-- 2N3904 NPN transistor symbol -->
+  <line x1="1030" y1="629" x2="1048" y2="629" stroke="#9a7a4a" stroke-width="1.5"/> <!-- base -->
+  <line x1="1048" y1="610" x2="1048" y2="648" stroke="#c0a060" stroke-width="2"/>   <!-- base vertical -->
+  <line x1="1048" y1="618" x2="1072" y2="606" stroke="#c0a060" stroke-width="1.5"/> <!-- collector -->
+  <line x1="1048" y1="640" x2="1072" y2="652" stroke="#c0a060" stroke-width="1.5"/> <!-- emitter -->
+  <!-- Emitter arrow -->
+  <polygon points="1062,646 1072,652 1064,656" fill="#c0a060"/>
+  <text x="1040" y="668" font-size="7" fill="#9a7a3a" font-family="Courier New">2N3904</text>
+
+  <!-- Emitter to GND -->
+  <line x1="1072" y1="652" x2="1072" y2="680" stroke="#2a4a2a" stroke-width="1.5"/>
+  <text x="1061" y="690" font-size="8" fill="#3a6a3a" font-family="Courier New">⏚</text>
+
+  <!-- Collector to LEDs -->
+  <line x1="1072" y1="606" x2="1072" y2="585" stroke="#c0a060" stroke-width="1.5"/>
+  <!-- 33Ω current limit -->
+  <rect x="1058" y="570" width="28" height="14" rx="1" fill="#100a06" stroke="#a08030" stroke-width="1"/>
+  <text x="1072" y="580" font-size="7" fill="#c0a060" text-anchor="middle" font-family="Courier New">33Ω</text>
+  <line x1="1072" y1="570" x2="1072" y2="558" stroke="#c0a060" stroke-width="1.5"/>
+  <!-- 5V supply to LED string -->
+  <line x1="1072" y1="558" x2="1072" y2="540" stroke="#a07030" stroke-width="1.5"/>
+  <text x="1075" y="537" font-size="7" fill="#a07030" font-family="Courier New">+5V</text>
+
+  <!-- LED symbols (2 per eye, series pair × 2 parallel) -->
+  <!-- LED string 1 -->
+  <circle cx="1130" cy="600" r="10" fill="#120a06" stroke="#c0a060" stroke-width="1.5"/>
+  <line x1="1120" y1="600" x2="1125" y2="596" stroke="#c0a060" stroke-width="1"/>
+  <line x1="1120" y1="600" x2="1125" y2="604" stroke="#c0a060" stroke-width="1"/>
+  <text x="1130" y="603" font-size="8" fill="#d0a060" text-anchor="middle" font-family="Courier New">▶</text>
+  <circle cx="1155" cy="600" r="10" fill="#120a06" stroke="#c0a060" stroke-width="1.5"/>
+  <text x="1155" y="603" font-size="8" fill="#d0a060" text-anchor="middle" font-family="Courier New">▶</text>
+  <line x1="1072" y1="558" x2="1120" y2="600" stroke="#c0a060" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="1165" y="598" font-size="7" fill="#8a6a2a" font-family="Courier New">← RED 620-660nm</text>
+  <text x="1165" y="610" font-size="7" fill="#8a6a2a" font-family="Courier New">   20mA / 2.0Vf</text>
+  <text x="1100" y="625" font-size="7" fill="#6a5a2a" font-family="Courier New">4× LEDs/eye (2S×2P)</text>
+  <text x="1100" y="638" font-size="7" fill="#4a3a1a" font-family="Courier New">mounted in goggle frame</text>
+
+  <!-- Right eye (abbreviated) -->
+  <text x="742" y="710" font-size="8" fill="#9a7a3a" font-family="Courier New">RIGHT EYE  (identical circuit — RG3 → HC14×2 → 1kΩ → 2N3904 → 33Ω → LEDs)</text>
+  <text x="742" y="725" font-size="7" fill="#4a3a1a" font-family="Courier New">Right eye LEDs flash on opposite half-cycle (see firmware)</text>
+  <text x="742" y="738" font-size="7" fill="#4a3a1a" font-family="Courier New">Change to same phase for synchronized both-eye flash</text>
+
+  <!-- ═══════════════════════════════════════════════════════
+       NOTES BLOCK
+  ═══════════════════════════════════════════════════════ -->
+  <rect x="40" y="390" width="320" height="440" rx="2" fill="#080d08" stroke="#1a3a1a" stroke-width="1"/>
+  <text x="200" y="408" font-size="9" fill="#4a7a4a" text-anchor="middle" font-family="Courier New" letter-spacing="1">DESIGN NOTES</text>
+  <line x1="40" y1="414" x2="360" y2="414" stroke="#1a3a1a" stroke-width="0.5"/>
+
+  <text x="55" y="432" font-size="7" fill="#3a6a3a" font-family="Courier New">AUDIO PATH:</text>
+  <text x="55" y="444" font-size="7" fill="#2a4a2a" font-family="Courier New">• PWM @ ~256kHz, DDS at 8kHz ISR</text>
+  <text x="55" y="456" font-size="7" fill="#2a4a2a" font-family="Courier New">• 2× RC stages (10kΩ+10nF) → 1.6kHz</text>
+  <text x="55" y="468" font-size="7" fill="#2a4a2a" font-family="Courier New">• NTE941M unity buffer (741 equiv)</text>
+  <text x="55" y="480" font-size="7" fill="#2a4a2a" font-family="Courier New">• 10µF coupling cap → DC blocked</text>
+
+  <text x="55" y="500" font-size="7" fill="#3a6a3a" font-family="Courier New">BEAT PATTERN (published by TC):</text>
+  <text x="55" y="512" font-size="7" fill="#2a4a2a" font-family="Courier New">• Base: 4Hz (theta) throughout</text>
+  <text x="55" y="524" font-size="7" fill="#2a4a2a" font-family="Courier New">• 40s spikes → 8Hz  (every ~8min)</text>
+  <text x="55" y="536" font-size="7" fill="#2a4a2a" font-family="Courier New">• 90s dips  → 2Hz  (every ~13min)</text>
+  <text x="55" y="548" font-size="7" fill="#2a4a2a" font-family="Courier New">• Smooth 3s ramps on transitions</text>
+
+  <text x="55" y="568" font-size="7" fill="#3a6a3a" font-family="Courier New">LED DRIVER:</text>
+  <text x="55" y="580" font-size="7" fill="#2a4a2a" font-family="Courier New">• NTE74HC14: cleans PWM edges</text>
+  <text x="55" y="592" font-size="7" fill="#2a4a2a" font-family="Courier New">• Two HC14 stages = non-inverting</text>
+  <text x="55" y="604" font-size="7" fill="#2a4a2a" font-family="Courier New">• 2N3904 base: 1kΩ, Ic max 200mA</text>
+  <text x="55" y="616" font-size="7" fill="#2a4a2a" font-family="Courier New">• 4 red LEDs/eye, 2S×2P config</text>
+  <text x="55" y="628" font-size="7" fill="#2a4a2a" font-family="Courier New">• 33Ω limits to ~30mA total/eye</text>
+
+  <text x="55" y="648" font-size="7" fill="#3a6a3a" font-family="Courier New">AD5220:</text>
+  <text x="55" y="660" font-size="7" fill="#2a4a2a" font-family="Courier New">• 64-step SPI digital pot</text>
+  <text x="55" y="672" font-size="7" fill="#2a4a2a" font-family="Courier New">• No SPI read — write-only</text>
+  <text x="55" y="684" font-size="7" fill="#2a4a2a" font-family="Courier New">• Pulse /CS to step; U/D = dir</text>
+  <text x="55" y="696" font-size="7" fill="#2a4a2a" font-family="Courier New">• Reset on power-up = wiper@end</text>
+
+  <text x="55" y="716" font-size="7" fill="#3a6a3a" font-family="Courier New">SMD NOTES (for PCB revision):</text>
+  <text x="55" y="728" font-size="7" fill="#2a4a2a" font-family="Courier New">• Replace 941M → TPA6132A2 SOT23</text>
+  <text x="55" y="740" font-size="7" fill="#2a4a2a" font-family="Courier New">• dsPIC30F4013 in TQFP44 package</text>
+  <text x="55" y="752" font-size="7" fill="#2a4a2a" font-family="Courier New">• MAX603 SOT23-5</text>
+  <text x="55" y="764" font-size="7" fill="#2a4a2a" font-family="Courier New">• AD5220 SOT23</text>
+  <text x="55" y="776" font-size="7" fill="#2a4a2a" font-family="Courier New">• 0402/0603 passives throughout</text>
+  <text x="55" y="788" font-size="7" fill="#2a4a2a" font-family="Courier New">• JLCPCB 2-layer 0.8mm recommended</text>
+
+  <text x="55" y="808" font-size="7" fill="#1a4a1a" font-family="Courier New">PROTOTYPE ORDER (breadboard):</text>
+  <text x="55" y="820" font-size="7" fill="#1a3a1a" font-family="Courier New">1. dsPIC + crystal + PWM audio out</text>
+  <text x="55" y="832" font-size="7" fill="#1a3a1a" font-family="Courier New">2. RC filter + headphone test</text>
+  <text x="55" y="844" font-size="7" fill="#1a3a1a" font-family="Courier New">3. LED driver + goggle frame</text>
+
+  <!-- Title bar bottom -->
+  <rect x="40" y="855" width="1200" height="1" fill="#1a3a1a"/>
+  <text x="50" y="867" font-size="7" fill="#2a4a2a" font-family="Courier New">REV 0.1  ·  dsPIC30F4013  ·  BINAURAL BEAT GOGGLE  ·  BRAD BEIDLER  ·  2026</text>
+  <text x="1200" y="867" font-size="7" fill="#2a4a2a" text-anchor="end" font-family="Courier New">NOT FOR COMMERCIAL USE</text>
+</svg>
+
+<div class="legend">
+  <div class="legend-item"><span style="background:#8a6a2a"></span>3.3V power rail</div>
+  <div class="legend-item"><span style="background:#a07030"></span>5V power rail</div>
+  <div class="legend-item"><span style="background:#2a4a2a"></span>GND</div>
+  <div class="legend-item"><span style="background:#4a9a6a"></span>audio signal</div>
+  <div class="legend-item"><span style="background:#6a8a9a"></span>SPI bus</div>
+  <div class="legend-item"><span style="background:#9a7a4a"></span>LED control</div>
+</div>
+</body>
+</html>
