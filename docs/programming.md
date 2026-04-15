@@ -12,7 +12,7 @@ How to flash firmware on both MCUs.
 
 ## Order of operations
 
-1. Solder the dsPIC30F4013 onto the assembled PCB (it's a hand-soldered through-hole part)
+1. Insert the dsPIC30F4013 into its PDIP-40 DIP socket on the assembled PCB
 2. Flash the dsPIC via the J1 ICSP header
 3. Flash the ESP32 via the 6-pin programming header
 4. From here on, ESP32 firmware updates happen over WiFi (OTA)

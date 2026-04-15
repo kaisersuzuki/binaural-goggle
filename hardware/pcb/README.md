@@ -28,7 +28,7 @@ Plus the EasyEDA Pro source files:
 
 ## Key components
 
-- **U1** dsPIC30F4013 — PDIP-40, hand-soldered (not assembled by JLCPCB)
+- **U1** dsPIC30F4013 — PDIP-40, socketed (DIP socket on PCB, chip inserted by user, not assembled by JLCPCB)
 - **U2** ESP32-WROOM-32E — SMD module, JLCPCB assembled
 - **U3** TPA6132A2 (or NTE941M) — headphone amp
 - **U4** AD5220 — SPI digital pot

@@ -45,7 +45,7 @@ See [`docs/programming.md`](docs/programming.md) for the full flash workflow. Sh
 
 1. Order PCB from JLCPCB using files in `hardware/pcb/`
 2. Order enclosure from JLC3DP using files in `hardware/enclosure/`
-3. Hand-solder the dsPIC30F4013 (PDIP-40, not stocked by JLCPCB)
+3. Insert the dsPIC30F4013 into its PDIP-40 DIP socket on the PCB (not stocked by JLCPCB — order from DigiKey)
 4. Flash dsPIC via PICkit 4 + MPLAB X
 5. Flash ESP32 initial firmware via USB-UART adapter on the programming header
 6. All future ESP32 updates happen over WiFi (OTA)
