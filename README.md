@@ -1,73 +1,275 @@
-# Binaural Goggle Controller
+# Binaural Beat + RGB LED Goggle Controller
 
-A DIY meditation/consciousness-exploration device that generates **binaural beat audio** synchronized with **RGB LED visual stimulation**. WiFi-controlled via embedded web UI.
+A DIY meditation device combining a dsPIC30F4013 microcontroller with an ESP32-WROOM-32E,
+RGB LED arrays mounted in ski goggle frames, binaural beat audio output, and WiFi control
+via an embedded ESP32 web server. Housed in a custom ASA FDM 3D-printed enclosure.
 
-> **Status:** In active development. PCB layout in progress with JLCPCB. Enclosure v7 ordered. Firmware foundations in place.
-
-![Schematic Rev 0.2](hardware/schematic/binaural_goggle_schematic_rev02.png)
+**License:** CC BY-NC 4.0 — personal/educational use only, not for commercial use.
 
 ---
 
-## What it does
+## Hardware Overview
 
-- **Stereo binaural beats** via DDS sine generation on a dsPIC30F4013 — programmable carrier (32–512 Hz) and beat (0.5–12 Hz) frequencies
-- **Background noise** mixing — pink, brown, blue, white
-- **Isochronic AM modulation** 0–100%
-- **RGB LED goggles** — 6 driver channels (3 per eye), soft-PWM color control synchronized to the beat
-- **WiFi web control UI** served by an onboard ESP32, accessible from any phone/laptop browser
-- **OTA firmware updates** for the ESP32
+| Component | Part | Notes |
+|-----------|------|-------|
+| Microcontroller | dsPIC30F4013-20I/P | PDIP-40, socketed, DigiKey |
+| WiFi module | ESP32-WROOM-32E | SMD, JLCPCB assembled |
+| Headphone amp | TPA6132A2 | WQFN-17, SMD |
+| Digital pot (volume) | AD5220BRZ50 | SOIC-8, SPI, 64-step × 2 |
+| 3.3V LDO | LD1117AG-3.3V | SO-8 |
+| 5V LDO | AMS1117-5.0 | SOT-223 |
+| Battery monitor | MAX8212ESA+T | SOIC-8 |
+| LED driver | NTE74HC14 (74HC14) | Schmitt inverter × 2 ICs |
+| LED transistor | 2N3904S | NPN × 6 |
+| Crystal | 10MHz | HC-49S |
+| LEDs | RGB common-cathode | 3× per eye, 2 eyes |
+| Enclosure | Custom FDM ASA, JLC3DP | 99×79×51mm body + lid |
+| PCB | 2-layer FR4, JLCPCB | 84.4×62.4mm, rounded corners |
 
-## Architecture
+### Panel Connectors
+| Connector | Part | Location | Function |
+|-----------|------|----------|----------|
+| DC barrel jack | 5.5×2.1mm | Rear panel | 9V power input |
+| Power switch | 12mm SPST latching toggle | Rear panel | Power on/off |
+| GX16-8 | Female chassis socket | Front panel | Goggle cable |
+| Headphone jack | Neutrik NJ3FP6C | Front panel | Stereo TRS output |
+| Status LED | 5mm panel mount | Front panel | Power indicator |
+
+---
+
+## PCB Pin Assignments
+
+### dsPIC30F4013 (U1)
+| Pin | Function | Connected to |
+|-----|----------|-------------|
+| 1 | MCLR | 10kΩ → 3.3V, ICSP |
+| 6 (RB4) | Eye A — Red | HC14 → 2N3904 → LED |
+| 7 (RB5) | Eye A — Green | HC14 → 2N3904 → LED |
+| 8 (RB6/PGC) | Eye A — Blue | HC14 → 2N3904 → LED |
+| 9 (RB7/PGD) | Eye B — Red | HC14 → 2N3904 → LED |
+| 10 (RB8) | Eye B — Green | HC14 → 2N3904 → LED |
+| 38 (RB9) | Eye B — Blue | HC14 → 2N3904 → LED |
+| 37 (RB10) | TPA6132A2 EN | Amp enable (HIGH = on) |
+| 4 (RB2) | AD5220 /CS | SPI chip select |
+| 5 (RB3) | AD5220 U/D | SPI up/down |
+| 24 (RF6/SCK1) | AD5220 CLK | SPI clock |
+| 25 (RF3/SDO1) | AD5220 DI | SPI data |
+| 27 (RF5/U2TX) | ESP32 RX | UART2 TX |
+| 28 (RF4/U2RX) | ESP32 TX | UART2 RX |
+| 33 (RD1/OC2) | PWM Right | Audio PWM right channel |
+| 34 (RD0/OC1) | PWM Left | Audio PWM left channel |
+| 13 (OSC1) | Crystal | 10MHz |
+| 14 (OSC2) | Crystal | 10MHz |
+
+> **Note:** RB6 and RB7 are shared with PGC/PGD (ICSP programming pins).
+> LEDs will flash briefly during firmware programming — this is expected and harmless.
+
+### ESP32-WROOM-32E (U7)
+| GPIO | Function | Connected to |
+|------|----------|-------------|
+| GPIO16 (RX2) | UART2 RX | dsPIC U2TX (RF5) |
+| GPIO17 (TX2) | UART2 TX | dsPIC U2RX (RF4) |
+| GPIO0 | Boot mode | Voltage divider on PCB |
+
+### Connector Headers
+| Ref | Pins | Function |
+|-----|------|----------|
+| J1 / H1 | 2×3 (6-pin) | ICSP — dsPIC programming (PICkit 4) |
+| J2 / H3 | 1×6 | ESP32 programming (GND/3V3/EN/IO0/TX0/RX0) |
+| J3 / PS1 | GX16-8 | Goggle cable (A_R/A_G/A_B/B_R/B_G/B_B/5V/GND) |
+| J4 / H4 | 1×3 | Headphone jack (GND/R/L → Neutrik NJ3FP6C) |
+| J5 / H2 | 1×2 | Status LED (VCC/GND) |
+| J6 / CN1 | 1×2 | 9V power input (VCC/GND from barrel jack) |
+| J7 | — | UART debug (not populated) |
+
+### GX16-8 Pin Map
+| GX16-8 Pin | Signal |
+|-----------|--------|
+| 1 | Eye A — Red |
+| 2 | Eye A — Green |
+| 3 | Eye A — Blue |
+| 4 | Eye B — Red |
+| 5 | Eye B — Green |
+| 6 | Eye B — Blue |
+| 7 | +5V |
+| 8 | GND |
+
+---
+
+## Repository Structure
 
 ```
-[Phone/Laptop] ─WiFi─→ [ESP32-WROOM-32E] ─UART─→ [dsPIC30F4013] ─→ Audio + LEDs
-                          (web server)              (DDS engine)
+binaural-goggle/
+├── firmware/
+│   ├── dspic/
+│   │   └── src/
+│   │       └── dspic_firmware.c      # dsPIC30F4013 main firmware
+│   └── esp32/
+│       └── src/
+│           └── main.cpp              # ESP32 WiFi + web server firmware
+├── hardware/
+│   ├── schematic/
+│   │   ├── binaural_goggle_schematic.html     # Schematic rev 0.1 (original)
+│   │   ├── Schematic_AUDIO-CONTROLLER_REV1.1.pdf  # Final schematic
+│   │   └── images/
+│   │       ├── schematic_rev0.1.png
+│   │       └── schematic_rev1.1_*.png
+│   ├── pcb/
+│   │   ├── Gerber_AUDIO-CONTROLLER_2026-04-19.zip
+│   │   ├── PCB_AUDIO-CONTROLLER_2026-04-19.json
+│   │   ├── SCH_AUDIO-CONTROLLER_2026-04-19.json
+│   │   └── images/
+│   │       ├── pcb_top.jpg
+│   │       ├── pcb_bottom.jpg
+│   │       └── pcb_3d_*.jpg
+│   └── bom/
+│       └── BOM_AUDIO-CONTROLLER.csv
+├── enclosure/
+│   ├── enclosure_body_v8_FINAL.stl
+│   ├── enclosure_lid_v8_FINAL.stl
+│   └── insert_drawing_v7.pdf
+└── docs/
+    ├── README.md                     # This file
+    ├── ARCHITECTURE.md
+    ├── UART_PROTOCOL.md
+    └── PROGRAMMING.md
 ```
 
-Two MCUs by design:
-- The **dsPIC** handles all hard-real-time signal processing (8 kHz DDS ISR, beat sequencing, LED PWM)
-- The **ESP32** handles WiFi, the web UI, OTA updates, and translates user commands to UART
+---
 
-## Repository layout
+## Firmware: dsPIC30F4013
 
-| Path | Contents |
-|---|---|
-| [`hardware/schematic/`](hardware/schematic/) | Circuit schematics (HTML + PNG) |
-| [`hardware/pcb/`](hardware/pcb/) | PCB layout files, BOM, Gerbers |
-| [`hardware/enclosure/`](hardware/enclosure/) | OpenSCAD source, STL files, JLC3DP drawings |
-| [`firmware/dspic/`](firmware/dspic/) | dsPIC30F4013 firmware (MPLAB X / XC16) |
-| [`firmware/esp32/`](firmware/esp32/) | ESP32 firmware (PlatformIO / Arduino) |
-| [`docs/`](docs/) | Architecture, UART protocol, programming, BOM |
+### Build Environment
+- MPLAB X IDE (latest)
+- XC16 compiler
+- PICkit 4 programmer
 
-## Building one
+### Key Parameters
+| Parameter | Value |
+|-----------|-------|
+| Crystal | 10MHz |
+| PLL | ×4 |
+| Fcy | 20MHz |
+| DDS sample rate | 8kHz (Timer1 ISR) |
+| PWM frequency | ~256kHz (OC1/OC2) |
+| UART2 baud rate | 9600 |
+| Beat range | 0.5–40Hz |
+| Carrier range | 50–500Hz |
+| Volume steps | 0–63 (AD5220) |
 
-See [`docs/programming.md`](docs/programming.md) for the full flash workflow. Short version:
+### Beat Pattern (default)
+| Phase | Frequency | Duration |
+|-------|-----------|----------|
+| Baseline | 4Hz (theta) | continuous |
+| Spike | 8Hz | 40 seconds every ~8 min |
+| Dip | 2Hz | 90 seconds every ~13 min |
+| Ramp | smooth | 3 second transitions |
 
-1. Order PCB from JLCPCB using files in `hardware/pcb/`
-2. Order enclosure from JLC3DP using files in `hardware/enclosure/`
-3. Insert the dsPIC30F4013 into its PDIP-40 DIP socket on the PCB (not stocked by JLCPCB — order from DigiKey)
-4. Flash dsPIC via PICkit 4 + MPLAB X
-5. Flash ESP32 initial firmware via USB-UART adapter on the programming header
-6. All future ESP32 updates happen over WiFi (OTA)
+### UART Command Protocol
+Commands are ASCII, newline-terminated, sent from ESP32 to dsPIC:
 
-## Hardware
+```
+BEAT:<hz>           — set beat frequency (0.5–40.0)
+CARRIER:<hz>        — set carrier frequency (50.0–500.0)
+VOL:<0-63>          — set volume step
+RGB_A:<r>,<g>,<b>   — set eye A color (0–255 each)
+RGB_B:<r>,<g>,<b>   — set eye B color
+RGB_AB:<r>,<g>,<b>  — set both eyes same color
+STATUS              — returns current state string
+RESET               — reset sequencer to baseline 4Hz
+```
 
-- **Audio:** dsPIC30F4013 PWM → 2-stage RC LPF (Fc≈1.6 kHz) → NTE941M unity buffer → 10µF coupling → 3.5mm jack
-- **Volume:** AD5220 64-step SPI digital potentiometer
-- **LEDs:** 6× (1kΩ → NTE74HC14×2 → 1kΩ → 2N3904 → 100Ω → RGB LED)
-- **Power:** Dual MAX603 LDOs (3.3V logic, 5V LEDs/op-amp), MAX8212 battery monitor
-- **WiFi:** ESP32-WROOM-32E
+dsPIC responds with `OK:<cmd>` or `ERR:UNKNOWN`.
 
-Full BOM in [`hardware/pcb/bom/`](hardware/pcb/bom/).
+---
 
-## Inspirations & references
+## Firmware: ESP32
 
-- Mitch Altman's Brain Machine (the canonical DIY mind machine)
-- Tom Campbell's binaural beat patterns (4 Hz base / 8 Hz spikes / 2 Hz dips)
-- Robert Monroe's Hemi-Sync research
+### Build Environment
+- VS Code + PlatformIO
+- Arduino framework for ESP32
 
-## License
+### WiFi
+| Setting | Value |
+|---------|-------|
+| Mode | AP (Access Point) |
+| SSID | BinauralGoggle |
+| Password | meditate123 |
+| Web UI | http://192.168.4.1 |
+| OTA hostname | binaural-goggle |
+| OTA password | goggle-ota |
 
-[CC BY-NC 4.0](LICENSE) — Free to remix, build, and share for non-commercial purposes. Attribution required.
+### First Flash (via J2 programming header)
+1. Connect FTDI/CP2102 adapter to J2 (GND/3V3/EN/IO0/TX0/RX0)
+2. Hold IO0 low during power-up to enter boot mode
+3. Flash via PlatformIO: `pio run --target upload`
+4. Subsequent updates via OTA
 
-**Not a medical device.** Photic stimulation can trigger seizures in people with photosensitive epilepsy. Use at your own risk.
+### Production Flash Note
+Once `Serial` (USB debug) is no longer needed, the firmware uses `Serial2` only
+(GPIO16/17) for dsPIC communication. USB serial is kept for debug output.
+
+---
+
+## Power
+
+- Input: 9V DC wall adapter, 5.5×2.1mm center-positive, 1A minimum
+- Panel switch (rear): SPST latching 12mm toggle, in series with 9V input
+- 3.3V rail: LD1117AG-3.3V LDO (logic, dsPIC, ESP32)
+- 5V rail: AMS1117-5.0 LDO (LEDs, headphone amp)
+- No battery, no protection diode required
+
+---
+
+## Programming the dsPIC
+
+Connect PICkit 4 to J1 (ICSP header, 2×3 male):
+
+| Pin | Signal |
+|-----|--------|
+| 1 | MCLR |
+| 2 | VDD (3.3V) |
+| 3 | VSS (GND) |
+| 4 | PGD (RB7) |
+| 5 | PGC (RB6) |
+| 6 | NC |
+
+> LEDs may flash briefly during programming due to PGC/PGD sharing RB6/RB7.
+
+---
+
+## 3D-Printed Enclosure
+
+Printed by JLC3DP in ASA black FDM.
+
+| Part | File | Dimensions |
+|------|------|------------|
+| Body | enclosure_body_v8_FINAL.stl | 99×79×39.5mm |
+| Lid | enclosure_lid_v8_FINAL.stl | 99×79×11.5mm |
+| Insert drawing | insert_drawing_v7.pdf | 4× M3×4×5 at (±38, ±27mm) |
+
+### Panel Hole Positions (Z=24mm from bottom)
+| Hole | Diameter | X position | Panel |
+|------|----------|-----------|-------|
+| GX16-8 | 16.2mm | X=−20 | Front |
+| TRS headphone | 9.5mm | X=+22 | Front |
+| Status LED | 5.2mm | X=0 | Front |
+| DC barrel jack | 8.2mm | X=+20 | Rear |
+| Power switch | 12.2mm | X=−20 | Rear |
+
+---
+
+## Hardware Still Needed (to order)
+
+- [ ] Neutrik NJ3FP6C — 1/4" stereo TRS panel jack
+- [ ] GX16-8 female chassis socket + male cable plug
+- [ ] 12mm SPST latching toggle switch
+- [ ] 5.5×2.1mm DC barrel jack (panel mount)
+- [ ] 9V DC wall adapter, 1A, center-positive
+- [ ] PICkit 4 programmer
+- [ ] dsPIC30F4013-20I/P (PDIP-40, DigiKey)
+- [ ] USB-UART adapter (FTDI or CP2102) for initial ESP32 flash
+
+---
+
+*Brad Beidler · 2026 · CC BY-NC 4.0*
