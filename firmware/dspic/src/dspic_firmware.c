@@ -64,9 +64,11 @@
 #include <xc.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 /* ── Configuration bits ──────────────────────────────────────────────── */
-_FOSC(CSW_FSCM_OFF & XT_PLL4);   /* 10MHz crystal x PLL4 = 40MHz, Fcy=20MHz */
+_FOSC(CSW_FSCM_OFF & XT_PLL8);   /* 10MHz crystal x PLL8 = 80MHz, Fcy=20MHz */
 _FWDT(WDT_OFF);
 _FBORPOR(PBOR_OFF & MCLR_EN);
 _FGS(CODE_PROT_OFF);
@@ -380,7 +382,7 @@ static void process_command(char *cmd) {
             p++;
         }
         float hz = whole + frac / fdiv;
-        if (hz >= 50.0f && hz <= 1500.0f) carrier_hz = hz;
+        if (hz >= 50.0f && hz <= 500.0f) carrier_hz = hz;
         uart2_puts("OK:CARRIER");
 
     } else if (strncmp(cmd, "VOL:", 4) == 0) {
@@ -517,8 +519,8 @@ int main(void) {
     init_uart2();
     init_timer1();      /* start last — ISR will begin firing */
 
-    /* Set initial volume to mid-range (step 32 of 63) */
-    /* AD5220 resets to end-stop on power-up, step up to 32 */
+    /* AD5220 powers up at midscale (step 32); this is a no-op but keeps
+       software state explicit and handles any power-up variation */
     ad5220_set_volume(32);
 
     /* Send boot message to ESP32 */

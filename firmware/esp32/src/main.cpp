@@ -212,10 +212,10 @@ function syncColors() {
   previewColor('b', hex);
 }
 
-function setPreset(hz, label) {
+async function setPreset(hz, label) {
   document.getElementById('beat').value = hz;
   document.getElementById('beat_val').textContent = hz.toFixed(1);
-  setStatus('Preset: ' + label);
+  await sendCmd('BEAT:' + hz.toFixed(1));
 }
 
 function setStatus(msg) {
@@ -237,16 +237,25 @@ async function sendAll() {
   const [ar,ag,ab] = hexToRgb(document.getElementById('color_a').value);
   const [br,bg,bb] = hexToRgb(document.getElementById('color_b').value);
 
-  await sendCmd('BEAT:' + beat);
-  await sendCmd('CARRIER:' + carrier + '.0');
-  await sendCmd('VOL:' + vol);
-  await sendCmd('RGB_A:' + ar + ',' + ag + ',' + ab);
-  await sendCmd('RGB_B:' + br + ',' + bg + ',' + bb);
+  const cmds = [
+    'BEAT:' + beat,
+    'CARRIER:' + carrier + '.0',
+    'VOL:' + vol,
+    'RGB_A:' + ar + ',' + ag + ',' + ab,
+    'RGB_B:' + br + ',' + bg + ',' + bb,
+  ];
+  for (const cmd of cmds) {
+    let resp;
+    try {
+      resp = await fetch('/cmd?c=' + encodeURIComponent(cmd)).then(r => r.text());
+    } catch(e) { setStatus('Network error: ' + e); return; }
+    if (!resp.startsWith('OK')) { setStatus('Failed: ' + resp + ' (cmd: ' + cmd + ')'); return; }
+  }
   setStatus('All settings sent.');
 }
 
-// Poll status every 5s
-setInterval(() => sendCmd('STATUS'), 5000);
+// Poll status every 30s — shorter intervals risk consuming command responses from Serial2
+setInterval(() => sendCmd('STATUS'), 30000);
 </script>
 </body>
 </html>
@@ -279,20 +288,6 @@ void handle_cmd() {
     }
     if (resp.length() == 0) resp = "timeout";
     server.send(200, "text/plain", resp);
-}
-
-void handle_status() {
-    dspic_send("STATUS");
-    unsigned long t = millis();
-    String resp = "";
-    while (millis() - t < 300) {
-        if (Serial2.available()) {
-            resp = Serial2.readStringUntil('\n');
-            resp.trim();
-            break;
-        }
-    }
-    server.send(200, "text/plain", resp.length() ? resp : "no response");
 }
 
 void handle_not_found() {
@@ -360,7 +355,6 @@ wifi_done:
     /* Web server routes */
     server.on("/", handle_root);
     server.on("/cmd", handle_cmd);
-    server.on("/status", handle_status);
     server.onNotFound(handle_not_found);
     server.begin();
     Serial.println("[HTTP] Server started at 192.168.4.1");
