@@ -1,85 +1,68 @@
 /*
- * dspic_firmware.c
+ * dspic_firmware.c  —  v2.2
  * Binaural Beat + RGB LED Goggle Controller
- * Target: dsPIC30F4013-20I/P, 40-pin PDIP, socketed
- * Fcy: 20MHz (10MHz crystal x PLL4)
+ * Target: dsPIC30F4013 (PDIP-40, socketed)
+ * Board:  Darlington PCB Design rev 1.1 (Atan), JLCPCB assembled
  *
- * PIN ASSIGNMENTS (final PCB rev 1.1, Atan/Darlington PCB Design):
+ * ── CHANGES vs v2.1 ─────────────────────────────────────────────────
+ *  FIX: LED beat gate moved from the 31.25Hz control task into the
+ *       8kHz ISR. At 31.25Hz any flicker above ~4Hz aliased badly
+ *       (20Hz got 1.5 updates/cycle). Photic-driving rates 8-20Hz
+ *       now get 400-1000 samples/cycle and are clean.
+ *  NEW: SEQ:ON|OFF  — disable the auto spike/dip sequencer so a
+ *       manually set BEAT stays put (required for photic work).
+ *  NEW: DUTY:<5-100> — flash duty cycle percent. Low duty (20-30)
+ *       drives phosphenes far harder than a 50% square wave.
  *
- *   POWER:
- *     VDD  = pin 11, 21, 32, 40  (+3.3V)
- *     VSS  = pin 12, 20, 31, 39  (GND)
- *     AVDD = pin 40              (+3.3V analog)
- *     AVSS = pin 39              (GND analog)
+ * ── CHANGES vs v2.0 ─────────────────────────────────────────────────
+ *  FIX: _FOSC uses XT_PLL8 (10MHz x 8 / 4 = 20 MIPS). PLL4 gave 10 MIPS
+ *       and made every clock-derived rate run at half speed.
+ *  FIX: ISR is now integer-only. All float math (beat ramp, phase-inc
+ *       recompute) runs in a 31.25Hz control task in the main loop.
+ *  NEW: LED beat synchronisation. Modes: ALT (default — eyes flash on
+ *       opposite half-cycles), SYNC (together), SOLID (no pulse).
+ *  FIX: LED soft-PWM now 64 levels @ 8kHz = 125Hz (was 31Hz = flicker).
+ *  FIX: no sscanf/sprintf/atoi — hand-rolled parsers (XC16-safe).
+ *  NEW: AD5220 wiper sync at boot (64 steps down, then up to default)
+ *       so tracked position is correct regardless of power-up state.
  *
- *   CLOCK:
- *     OSC1 = pin 13  (10MHz crystal)
- *     OSC2 = pin 14  (10MHz crystal)
+ * ── PIN MAP (verified against rev 1.1 netlist) ──────────────────────
+ *  OC1/RD0  p34  PWM audio L          OC2/RD1  p33  PWM audio R
+ *  SCK1/RF6 p24  AD5220 CLK (both)    RB2 p4   AD5220 /CS (both)
+ *  RB3      p5   AD5220 U/D (both)
+ *  U2TX/RF5 p27  -> ESP32 RX0         U2RX/RF4 p28  <- ESP32 TX0
+ *  RB4  p6  A_R    RB5  p7  A_G    RB6/PGC p8  A_B
+ *  RB7/PGD p9 B_R  RB8 p10  B_G    RB9    p38  B_B
+ *  RB10    p37  TPA6132A2 EN (drive HIGH at boot or no audio)
+ *  OSC1/OSC2 p13/p14  10MHz crystal
  *
- *   AUDIO PWM OUTPUT:
- *     OC1/RD0 = pin 34  (Left channel PWM)
- *     OC2/RD1 = pin 33  (Right channel PWM)
+ * NOTE: RB6/RB7 double as PGC/PGD — LEDs flicker during ICSP. Harmless.
+ * NOTE: The two AD5220s share CLK//CS/UD and step together (L+R).
  *
- *   SPI1 -> AD5220 digital pot (volume):
- *     SCK1/RF6 = pin 24  (SPI clock)
- *     SDO1/RF3 = pin 25  (SPI data out -> AD5220 DI)
- *     RB2      = pin 4   (/CS  - chip select, active low)
- *     RB3      = pin 5   (U/D  - up/down direction)
+ * ── UART PROTOCOL (9600 8N1, newline-terminated ASCII) ──────────────
+ *  BEAT:<hz>  CARRIER:<hz>  VOL:<0-63>  RGB_A/RGB_B/RGB_AB:<r>,<g>,<b>
+ *  MODE:ALT|SYNC|SOLID   SEQ:ON|OFF   DUTY:<5-100>   STATUS   RESET
  *
- *   UART2 -> ESP32 Serial2 (GPIO16/17):
- *     U2TX/RF5 = pin 27  (dsPIC TX -> ESP32 RX, GPIO16)
- *     U2RX/RF4 = pin 28  (dsPIC RX -> ESP32 TX, GPIO17)
- *
- *   RGB LED DRIVER (via 74HC14 + 2N3904):
- *     RB4 = pin 6   (Eye A - Red)
- *     RB5 = pin 7   (Eye A - Green)
- *     RB6 = pin 8   (Eye A - Blue)   NOTE: shared with PGC, LEDs flash during ICSP programming
- *     RB7 = pin 9   (Eye B - Red)    NOTE: shared with PGD, LEDs flash during ICSP programming
- *     RB8 = pin 10  (Eye B - Green)
- *     RB9 = pin 38  (Eye B - Blue)
- *
- *   TPA6132A2 HEADPHONE AMP ENABLE:
- *     RB10 = pin 37  (EN pin of TPA6132A2 - must be HIGH to enable amp)
- *
- *   MCLR:
- *     MCLR = pin 1   (10k pullup to 3.3V, ICSP reset)
- *
- * ARCHITECTURE:
- *   - Timer1 ISR @ 8kHz: DDS sine generation (L+R channels), beat sequencer,
- *     soft-PWM for RGB LEDs
- *   - OC1/OC2: PWM output ~256kHz, duty cycle set by DDS
- *   - SPI1: AD5220 volume control (write-only, 64 steps, pulse /CS with U/D set)
- *   - UART2: 9600 baud command parser (from ESP32)
- *
- * BEAT PATTERN (Tomás Cobos / published protocol):
- *   Baseline: 4Hz (theta) continuous
- *   Spikes:   8Hz for 40s every ~8min
- *   Dips:     2Hz for 90s every ~13min
- *   Transitions: 3s linear ramp
- *
- * COMPILE: MPLAB X + XC16
- * PROGRAM: PICkit 4 via ICSP header J1 (MCLR/VDD/VSS/PGD/PGC)
+ * BUILD: MPLAB X + XC16.  PROGRAM: PICkit 4 on H1.
  */
 
 #include <xc.h>
 #include <stdint.h>
 #include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
 
-/* ── Configuration bits ──────────────────────────────────────────────── */
-_FOSC(CSW_FSCM_OFF & XT_PLL8);   /* 10MHz crystal x PLL8 = 80MHz, Fcy=20MHz */
+/* ── Configuration bits ─────────────────────────────────────────── */
+_FOSC(CSW_FSCM_OFF & XT_PLL8);   /* 10MHz x8 PLL -> Fcy = 20 MIPS */
 _FWDT(WDT_OFF);
 _FBORPOR(PBOR_OFF & MCLR_EN);
 _FGS(CODE_PROT_OFF);
 
-/* ── Fcy and derived constants ───────────────────────────────────────── */
-#define FCY         20000000UL
-#define FSAMP       8000UL          /* DDS sample rate (Hz) */
-#define PWM_PERIOD  78              /* OC period for ~256kHz PWM (FCY/256kHz) */
-#define UART_BAUD   9600
+#define FCY          20000000UL
+#define FSAMP        8000UL
+#define PWM_PERIOD   78            /* 20MHz/78 ~= 256kHz PWM carrier   */
+#define CTRL_DIV     256           /* control task every 256 samples   */
+                                   /* -> 31.25Hz control rate          */
 
-/* ── DDS sine table (256 entries, 8-bit, centered at 128) ────────────── */
+/* ── Sine table: 256 entries, 0..255 centred at 128 ─────────────── */
 static const uint8_t sine_table[256] = {
     128,131,134,137,140,143,146,149,152,155,158,161,164,167,170,173,
     176,179,182,184,187,190,192,195,198,200,203,205,208,210,212,215,
@@ -99,442 +82,421 @@ static const uint8_t sine_table[256] = {
      79, 82, 85, 88, 91, 94, 97,100,103,106,109,112,115,118,121,124
 };
 
-/* ── DDS state ───────────────────────────────────────────────────────── */
-static uint32_t phase_acc_L = 0;    /* 32-bit phase accumulator, left  */
-static uint32_t phase_acc_R = 0;    /* 32-bit phase accumulator, right */
-static uint32_t phase_inc_L = 0;    /* phase increment = freq_L * 2^32 / FSAMP */
-static uint32_t phase_inc_R = 0;
+/* ── ISR-shared state (integer only) ────────────────────────────── */
+static volatile uint32_t phase_acc_L = 0, phase_acc_R = 0;
+static volatile uint32_t phase_inc_L = 0, phase_inc_R = 0;
+static volatile uint8_t  pwm6 = 0;                 /* 0..63 soft-PWM  */
+static volatile uint32_t led_phase = 0;            /* beat phase acc  */
+static volatile uint32_t led_phase_inc = 0;        /* per-sample step */
+static volatile uint16_t duty_half = 32768;        /* ALT threshold   */
+static volatile uint16_t duty_full = 65535;        /* SYNC threshold  */
+static volatile uint16_t ctrl_downct = CTRL_DIV;   /* ISR->task div   */
+static volatile uint8_t  ctrl_flag = 0;            /* run control task*/
 
-/* carrier + beat: L = Fc, R = Fc + beat_freq */
-static float carrier_hz   = 200.0f; /* carrier frequency (Hz) */
-static float beat_hz      = 4.0f;   /* current beat frequency (Hz) */
-static float target_beat  = 4.0f;   /* target beat for ramping */
-static float ramp_step    = 0.0f;   /* per-sample ramp increment */
+/* ── Control-task state (floats live here, NOT in ISR) ──────────── */
+static float carrier_hz  = 200.0f;
+static float beat_hz     = 4.0f;
+static float target_beat = 4.0f;
+static float ramp_per_ctrl = 0.05f;   /* Hz per control tick during ramp */
 
-/* Beat sequencer timing (in samples at 8kHz) */
-#define SAMPLES_PER_SEC     FSAMP
-#define BASELINE_BEAT_HZ    4.0f
-#define SPIKE_BEAT_HZ       8.0f
-#define DIP_BEAT_HZ         2.0f
-#define SPIKE_DURATION      (40UL  * SAMPLES_PER_SEC)
-#define DIP_DURATION        (90UL  * SAMPLES_PER_SEC)
-#define SPIKE_INTERVAL      (480UL * SAMPLES_PER_SEC)   /* ~8min  */
-#define DIP_INTERVAL        (780UL * SAMPLES_PER_SEC)   /* ~13min */
-#define RAMP_DURATION       (3UL   * SAMPLES_PER_SEC)
+static uint8_t  rgb_target[6]  = {255,0,0, 255,0,0};
+static volatile uint8_t rgb_current[6] = {0};
+#define FADE_STEP 8                    /* per control tick (31Hz)     */
 
-static uint32_t sequencer_tick  = 0;
-static uint32_t next_spike      = SPIKE_INTERVAL;
-static uint32_t next_dip        = DIP_INTERVAL;
-static uint32_t event_end       = 0;
-typedef enum { SEQ_BASELINE, SEQ_SPIKE, SEQ_DIP } seq_state_t;
-static seq_state_t seq_state = SEQ_BASELINE;
+typedef enum { MODE_ALT, MODE_SYNC, MODE_SOLID } led_mode_t;
+static volatile led_mode_t led_mode = MODE_ALT;
+static uint8_t  seq_enabled = 1;       /* auto spike/dip sequencer     */
+static uint8_t  duty_pct    = 100;     /* flash duty, percent          */
 
-/* ── RGB soft-PWM state ──────────────────────────────────────────────── */
-/* 6 channels: [0]=A_R [1]=A_G [2]=A_B [3]=B_R [4]=B_G [5]=B_B */
-static uint8_t  rgb_target[6]  = {255, 0, 0, 255, 0, 0}; /* default: red */
-static uint8_t  rgb_current[6] = {0};
-static uint8_t  pwm_counter    = 0;
-static uint16_t led_tick        = 0;
-#define LED_FADE_RATE   2   /* fade step per 8kHz tick interval */
+/* Sequencer (ticks are control ticks @ 31.25Hz) */
+#define CTRL_HZ            31          /* integer approx is fine      */
+#define BASELINE_BEAT      4.0f
+#define SPIKE_BEAT         8.0f
+#define DIP_BEAT           2.0f
+#define SPIKE_LEN_T        (40UL  * CTRL_HZ)
+#define DIP_LEN_T          (90UL  * CTRL_HZ)
+#define SPIKE_EVERY_T      (480UL * CTRL_HZ)
+#define DIP_EVERY_T        (780UL * CTRL_HZ)
+#define RAMP_TICKS         (3UL   * CTRL_HZ)     /* 3s transitions   */
 
-/* ── Volume ──────────────────────────────────────────────────────────── */
-static uint8_t volume_steps = 32;   /* 0-63, current position */
+static uint32_t seq_t = 0, next_spike = SPIKE_EVERY_T,
+                next_dip = DIP_EVERY_T, event_end = 0;
+typedef enum { SEQ_BASE, SEQ_SPIKE, SEQ_DIP } seq_t_e;
+static seq_t_e seq_state = SEQ_BASE;
 
-/* ── UART command buffer ─────────────────────────────────────────────── */
-#define CMD_BUF_LEN 32
-static char  cmd_buf[CMD_BUF_LEN];
-static uint8_t cmd_idx = 0;
-static volatile uint8_t cmd_ready = 0;
+static uint8_t volume_steps = 32;
 
-/* ─────────────────────────────────────────────────────────────────────
-   UTILITY: compute DDS phase increment
-   phase_inc = freq * 2^32 / FSAMP
-   ───────────────────────────────────────────────────────────────────── */
+/* ── UART command buffer ────────────────────────────────────────── */
+#define CMD_LEN 32
+static char cmd_buf[CMD_LEN];
+static volatile uint8_t cmd_idx = 0, cmd_ready = 0;
+
+/* ═════════════════════════ helpers ═════════════════════════════ */
+
 static uint32_t freq_to_inc(float hz) {
     return (uint32_t)(hz * (4294967296.0f / (float)FSAMP));
 }
 
-/* ─────────────────────────────────────────────────────────────────────
-   SPI1 / AD5220 volume control
-   AD5220 is write-only (no MISO). To step wiper:
-     1. Set U/D pin (RB3) for direction
-     2. Assert /CS low (RB2)
-     3. Pulse CLK (handled by SPI peripheral or bit-bang)
-     4. Deassert /CS high
-   We use a simple bit-bang approach for reliability.
-   ───────────────────────────────────────────────────────────────────── */
-#define AD5220_CS_LOW()   LATBbits.LATB2 = 0
-#define AD5220_CS_HIGH()  LATBbits.LATB2 = 1
-#define AD5220_UD_UP()    LATBbits.LATB3 = 1
-#define AD5220_UD_DOWN()  LATBbits.LATB3 = 0
-#define AD5220_CLK_LOW()  LATFbits.LATF6 = 0
-#define AD5220_CLK_HIGH() LATFbits.LATF6 = 1
-
-static void ad5220_step(uint8_t up) {
-    if (up) AD5220_UD_UP(); else AD5220_UD_DOWN();
-    AD5220_CS_LOW();
-    __asm__("nop"); __asm__("nop");
-    AD5220_CLK_HIGH();
-    __asm__("nop"); __asm__("nop");
-    AD5220_CLK_LOW();
-    __asm__("nop"); __asm__("nop");
-    AD5220_CS_HIGH();
+/* parse "12.5" -> float; returns -1 on garbage */
+static float parse_float(const char *p) {
+    float whole = 0, frac = 0, div = 1;
+    uint8_t in_frac = 0, seen = 0;
+    while (*p) {
+        if (*p == '.') { if (in_frac) return -1; in_frac = 1; }
+        else if (*p >= '0' && *p <= '9') {
+            seen = 1;
+            if (in_frac) { frac = frac*10 + (*p-'0'); div *= 10; }
+            else           whole = whole*10 + (*p-'0');
+        } else if (*p != ' ') return -1;
+        p++;
+    }
+    return seen ? whole + frac/div : -1;
 }
 
-/* Set absolute volume (0-63). AD5220 has no read-back so we track position. */
-static void ad5220_set_volume(uint8_t target) {
+/* parse "r,g,b" into out[3]; returns 1 on success */
+static uint8_t parse_rgb(const char *p, uint8_t *out) {
+    uint16_t v = 0; uint8_t n = 0, seen = 0;
+    while (1) {
+        if (*p >= '0' && *p <= '9') {
+            v = v*10 + (*p-'0'); if (v > 255) v = 255; seen = 1;
+        } else if (*p == ',' || *p == '\0') {
+            if (!seen || n >= 3) return 0;
+            out[n++] = (uint8_t)v; v = 0; seen = 0;
+            if (*p == '\0') break;
+        } else return 0;
+        p++;
+    }
+    return (n == 3);
+}
+
+/* append unsigned int as decimal to buf, return new end ptr */
+static char *put_u16(char *b, uint16_t v) {
+    char tmp[6]; uint8_t i = 0;
+    do { tmp[i++] = '0' + v % 10; v /= 10; } while (v);
+    while (i) *b++ = tmp[--i];
+    return b;
+}
+
+/* ── AD5220 (both units in parallel): pulse CLK with /CS low ───── */
+#define POT_CS_LO()  (LATBbits.LATB2 = 0)
+#define POT_CS_HI()  (LATBbits.LATB2 = 1)
+#define POT_UP()     (LATBbits.LATB3 = 1)
+#define POT_DN()     (LATBbits.LATB3 = 0)
+#define POT_CLK_LO() (LATFbits.LATF6 = 0)
+#define POT_CLK_HI() (LATFbits.LATF6 = 1)
+
+static void pot_step(uint8_t up) {
+    if (up) POT_UP(); else POT_DN();
+    POT_CS_LO();  __builtin_nop(); __builtin_nop();
+    POT_CLK_HI(); __builtin_nop(); __builtin_nop();
+    POT_CLK_LO(); __builtin_nop(); __builtin_nop();
+    POT_CS_HI();
+}
+
+static void pot_set(uint8_t target) {
     if (target > 63) target = 63;
-    while (volume_steps < target) { ad5220_step(1); volume_steps++; }
-    while (volume_steps > target) { ad5220_step(0); volume_steps--; }
+    while (volume_steps < target) { pot_step(1); volume_steps++; }
+    while (volume_steps > target) { pot_step(0); volume_steps--; }
 }
 
-/* ─────────────────────────────────────────────────────────────────────
-   RGB LED output (soft-PWM via PORTB)
-   Channels mapped to PORTB bits:
-     RB4 = A_Red, RB5 = A_Green, RB6 = A_Blue
-     RB7 = B_Red, RB8 = B_Green, RB9 = B_Blue
-   ───────────────────────────────────────────────────────────────────── */
-static void rgb_update_outputs(void) {
-    /* soft-PWM: compare pwm_counter against each channel's current value */
-    LATBbits.LATB4 = (pwm_counter < rgb_current[0]) ? 1 : 0; /* A_R */
-    LATBbits.LATB5 = (pwm_counter < rgb_current[1]) ? 1 : 0; /* A_G */
-    LATBbits.LATB6 = (pwm_counter < rgb_current[2]) ? 1 : 0; /* A_B */
-    LATBbits.LATB7 = (pwm_counter < rgb_current[3]) ? 1 : 0; /* B_R */
-    LATBbits.LATB8 = (pwm_counter < rgb_current[4]) ? 1 : 0; /* B_G */
-    LATBbits.LATB9 = (pwm_counter < rgb_current[5]) ? 1 : 0; /* B_B */
-    pwm_counter++;
-}
-
-/* Fade current RGB values toward targets */
-static void rgb_fade_step(void) {
+/* force wiper to a known position regardless of power-up state */
+static void pot_sync_boot(uint8_t initial) {
     uint8_t i;
-    for (i = 0; i < 6; i++) {
-        if (rgb_current[i] < rgb_target[i]) {
-            uint8_t delta = rgb_target[i] - rgb_current[i];
-            rgb_current[i] += (delta > LED_FADE_RATE) ? LED_FADE_RATE : delta;
-        } else if (rgb_current[i] > rgb_target[i]) {
-            uint8_t delta = rgb_current[i] - rgb_target[i];
-            rgb_current[i] -= (delta > LED_FADE_RATE) ? LED_FADE_RATE : delta;
-        }
-    }
+    for (i = 0; i < 64; i++) pot_step(0);   /* slam to bottom */
+    volume_steps = 0;
+    pot_set(initial);
 }
 
-/* ─────────────────────────────────────────────────────────────────────
-   Beat sequencer — called every sample from Timer1 ISR
-   ───────────────────────────────────────────────────────────────────── */
-static void sequencer_tick_fn(void) {
-    sequencer_tick++;
+/* ── UART2 ──────────────────────────────────────────────────────── */
+static void uart2_putch(char c) { while (!U2STAbits.TRMT); U2TXREG = c; }
+static void uart2_puts(const char *s) { while (*s) uart2_putch(*s++); uart2_putch('\n'); }
 
-    /* ramp beat_hz toward target_beat */
-    if (beat_hz < target_beat) {
-        beat_hz += ramp_step;
-        if (beat_hz > target_beat) beat_hz = target_beat;
-    } else if (beat_hz > target_beat) {
-        beat_hz -= ramp_step;
-        if (beat_hz < target_beat) beat_hz = target_beat;
-    }
-
-    /* update phase increments whenever beat changes */
-    phase_inc_L = freq_to_inc(carrier_hz);
-    phase_inc_R = freq_to_inc(carrier_hz + beat_hz);
-
-    /* state machine */
-    switch (seq_state) {
-        case SEQ_BASELINE:
-            if (sequencer_tick >= next_spike) {
-                target_beat = SPIKE_BEAT_HZ;
-                ramp_step = (SPIKE_BEAT_HZ - beat_hz) / (float)RAMP_DURATION;
-                if (ramp_step < 0) ramp_step = -ramp_step;
-                event_end = sequencer_tick + SPIKE_DURATION;
-                next_spike = sequencer_tick + SPIKE_INTERVAL;
-                seq_state = SEQ_SPIKE;
-            } else if (sequencer_tick >= next_dip) {
-                target_beat = DIP_BEAT_HZ;
-                ramp_step = (beat_hz - DIP_BEAT_HZ) / (float)RAMP_DURATION;
-                if (ramp_step < 0) ramp_step = -ramp_step;
-                event_end = sequencer_tick + DIP_DURATION;
-                next_dip = sequencer_tick + DIP_INTERVAL;
-                seq_state = SEQ_DIP;
-            }
-            break;
-
-        case SEQ_SPIKE:
-        case SEQ_DIP:
-            if (sequencer_tick >= event_end) {
-                target_beat = BASELINE_BEAT_HZ;
-                ramp_step = 0.0006f; /* ~3s ramp back at 8kHz */
-                seq_state = SEQ_BASELINE;
-            }
-            break;
-    }
-}
-
-/* ─────────────────────────────────────────────────────────────────────
-   Timer1 ISR — 8kHz sample rate
-   Generates DDS samples, updates PWM duty cycles, drives LED soft-PWM
-   ───────────────────────────────────────────────────────────────────── */
-void __attribute__((__interrupt__, no_auto_psv)) _T1Interrupt(void) {
-    /* DDS: advance phase accumulators */
-    phase_acc_L += phase_inc_L;
-    phase_acc_R += phase_inc_R;
-
-    /* Read sine table (top 8 bits of 32-bit accumulator = table index) */
-    uint8_t samp_L = sine_table[phase_acc_L >> 24];
-    uint8_t samp_R = sine_table[phase_acc_R >> 24];
-
-    /* Update OC1/OC2 duty cycle (PWM output) */
-    OC1RS = (uint16_t)samp_L * PWM_PERIOD / 255;
-    OC2RS = (uint16_t)samp_R * PWM_PERIOD / 255;
-
-    /* LED soft-PWM (run every sample for ~31kHz PWM rate) */
-    rgb_update_outputs();
-
-    /* LED fade (run at ~31Hz: every 256 samples) */
-    led_tick++;
-    if (led_tick >= 256) {
-        led_tick = 0;
-        rgb_fade_step();
-    }
-
-    /* Beat sequencer */
-    sequencer_tick_fn();
-
-    IFS0bits.T1IF = 0; /* clear interrupt flag */
-}
-
-/* ─────────────────────────────────────────────────────────────────────
-   UART2 RX ISR — collect command bytes into buffer
-   Commands are newline-terminated ASCII strings from ESP32
-   ───────────────────────────────────────────────────────────────────── */
 void __attribute__((__interrupt__, no_auto_psv)) _U2RXInterrupt(void) {
     char c = U2RXREG;
     IFS1bits.U2RXIF = 0;
-
+    if (U2STAbits.OERR) U2STAbits.OERR = 0;      /* clear overrun    */
     if (c == '\n' || c == '\r') {
-        if (cmd_idx > 0) {
-            cmd_buf[cmd_idx] = '\0';
-            cmd_ready = 1;
-            cmd_idx = 0;
-        }
-    } else if (cmd_idx < CMD_BUF_LEN - 1) {
+        if (cmd_idx) { cmd_buf[cmd_idx] = 0; cmd_ready = 1; cmd_idx = 0; }
+    } else if (cmd_idx < CMD_LEN-1 && !cmd_ready) {
         cmd_buf[cmd_idx++] = c;
     }
 }
 
-/* ─────────────────────────────────────────────────────────────────────
-   UART2 transmit helper
-   ───────────────────────────────────────────────────────────────────── */
-static void uart2_putch(char c) {
-    while (!U2STAbits.TRMT);
-    U2TXREG = c;
+/* ═══════════════ Timer1 ISR @ 8kHz — INTEGER ONLY ══════════════ */
+void __attribute__((__interrupt__, no_auto_psv)) _T1Interrupt(void) {
+    /* DDS */
+    phase_acc_L += phase_inc_L;
+    phase_acc_R += phase_inc_R;
+    OC1RS = (uint16_t)((sine_table[phase_acc_L >> 24] * PWM_PERIOD) >> 8);
+    OC2RS = (uint16_t)((sine_table[phase_acc_R >> 24] * PWM_PERIOD) >> 8);
+
+    /* --- LED beat gate, sampled at 8kHz so 8-20Hz strobe is clean --- */
+    led_phase += led_phase_inc;
+    {
+        uint16_t ph = (uint16_t)(led_phase >> 16);
+        uint8_t eyeA, eyeB;
+        switch (led_mode) {
+        case MODE_SYNC:
+            eyeA = eyeB = (ph < duty_full);
+            break;
+        case MODE_SOLID:
+            eyeA = eyeB = 1;
+            break;
+        default: /* MODE_ALT: eye A on 1st half, eye B on 2nd half */
+            eyeA = (ph < duty_half);
+            eyeB = (ph >= 32768) && ((uint16_t)(ph - 32768) < duty_half);
+            break;
+        }
+
+        /* RGB soft-PWM: 64 levels -> 125Hz repeat */
+        pwm6 = (pwm6 + 1) & 0x3F;
+        LATBbits.LATB4 = eyeA && (pwm6 < (rgb_current[0] >> 2));
+        LATBbits.LATB5 = eyeA && (pwm6 < (rgb_current[1] >> 2));
+        LATBbits.LATB6 = eyeA && (pwm6 < (rgb_current[2] >> 2));
+        LATBbits.LATB7 = eyeB && (pwm6 < (rgb_current[3] >> 2));
+        LATBbits.LATB8 = eyeB && (pwm6 < (rgb_current[4] >> 2));
+        LATBbits.LATB9 = eyeB && (pwm6 < (rgb_current[5] >> 2));
+    }
+
+    /* wake control task at 31.25Hz */
+    if (--ctrl_downct == 0) { ctrl_downct = CTRL_DIV; ctrl_flag = 1; }
+
+    IFS0bits.T1IF = 0;
 }
 
-static void uart2_puts(const char *s) {
-    while (*s) uart2_putch(*s++);
-    uart2_putch('\n');
-}
+/* ═══════════════ Control task @ 31.25Hz (main loop) ════════════ */
+static void control_tick(void) {
+    uint8_t i;
 
-/* ─────────────────────────────────────────────────────────────────────
-   Command parser
-   Protocol (from ESP32):
-     BEAT:<hz>        set beat frequency (e.g. BEAT:4.0)
-     CARRIER:<hz>     set carrier frequency (e.g. CARRIER:200.0)
-     VOL:<0-63>       set volume step
-     RGB_A:<r>,<g>,<b>  set eye A color (0-255 each)
-     RGB_B:<r>,<g>,<b>  set eye B color
-     RGB_AB:<r>,<g>,<b> set both eyes same color
-     STATUS           reply with current state
-     RESET            reset sequencer to baseline
-   ───────────────────────────────────────────────────────────────────── */
-static void process_command(char *cmd) {
-    if (strncmp(cmd, "BEAT:", 5) == 0) {
-        float hz = 0;
-        /* simple float parse */
-        char *p = cmd + 5;
-        float whole = 0, frac = 0, fdiv = 1;
-        uint8_t in_frac = 0;
-        while (*p) {
-            if (*p == '.') { in_frac = 1; }
-            else if (*p >= '0' && *p <= '9') {
-                if (in_frac) { frac = frac * 10 + (*p - '0'); fdiv *= 10; }
-                else whole = whole * 10 + (*p - '0');
-            }
-            p++;
+    /* --- beat ramp --- */
+    if (beat_hz < target_beat) {
+        beat_hz += ramp_per_ctrl;
+        if (beat_hz > target_beat) beat_hz = target_beat;
+    } else if (beat_hz > target_beat) {
+        beat_hz -= ramp_per_ctrl;
+        if (beat_hz < target_beat) beat_hz = target_beat;
+    }
+
+    /* --- recompute DDS increments (only place this happens) --- */
+    {
+        uint32_t iL = freq_to_inc(carrier_hz);
+        uint32_t iR = freq_to_inc(carrier_hz + beat_hz);
+        IEC0bits.T1IE = 0;          /* brief atomic window */
+        phase_inc_L = iL;
+        phase_inc_R = iR;
+        IEC0bits.T1IE = 1;
+    }
+
+    /* --- sequencer (skipped entirely when SEQ:OFF) --- */
+    if (seq_enabled) {
+    seq_t++;
+    switch (seq_state) {
+    case SEQ_BASE:
+        if (seq_t >= next_spike) {
+            target_beat = SPIKE_BEAT;
+            ramp_per_ctrl = (SPIKE_BEAT - BASELINE_BEAT) / (float)RAMP_TICKS;
+            event_end = seq_t + SPIKE_LEN_T;
+            next_spike = seq_t + SPIKE_EVERY_T;
+            seq_state = SEQ_SPIKE;
+        } else if (seq_t >= next_dip) {
+            target_beat = DIP_BEAT;
+            ramp_per_ctrl = (BASELINE_BEAT - DIP_BEAT) / (float)RAMP_TICKS;
+            event_end = seq_t + DIP_LEN_T;
+            next_dip = seq_t + DIP_EVERY_T;
+            seq_state = SEQ_DIP;
         }
-        hz = whole + frac / fdiv;
-        if (hz > 0.5f && hz <= 40.0f) {
-            target_beat = hz;
-            ramp_step = 0.0006f;
+        break;
+    case SEQ_SPIKE:
+    case SEQ_DIP:
+        if (seq_t >= event_end) {
+            ramp_per_ctrl = (target_beat > BASELINE_BEAT ?
+                             target_beat - BASELINE_BEAT :
+                             BASELINE_BEAT - target_beat) / (float)RAMP_TICKS;
+            target_beat = BASELINE_BEAT;
+            seq_state = SEQ_BASE;
         }
-        uart2_puts("OK:BEAT");
+        break;
+    }
+    }   /* end if (seq_enabled) */
+    if (ramp_per_ctrl < 0.001f) ramp_per_ctrl = 0.05f;
 
-    } else if (strncmp(cmd, "CARRIER:", 8) == 0) {
-        /* same float parse as above */
-        char *p = cmd + 8;
-        float whole = 0, frac = 0, fdiv = 1;
-        uint8_t in_frac = 0;
-        while (*p) {
-            if (*p == '.') { in_frac = 1; }
-            else if (*p >= '0' && *p <= '9') {
-                if (in_frac) { frac = frac * 10 + (*p - '0'); fdiv *= 10; }
-                else whole = whole * 10 + (*p - '0');
-            }
-            p++;
+    /* --- colour fade toward targets --- */
+    for (i = 0; i < 6; i++) {
+        if (rgb_current[i] < rgb_target[i]) {
+            uint8_t d = rgb_target[i] - rgb_current[i];
+            rgb_current[i] += (d > FADE_STEP) ? FADE_STEP : d;
+        } else if (rgb_current[i] > rgb_target[i]) {
+            uint8_t d = rgb_current[i] - rgb_target[i];
+            rgb_current[i] -= (d > FADE_STEP) ? FADE_STEP : d;
         }
-        float hz = whole + frac / fdiv;
-        if (hz >= 50.0f && hz <= 500.0f) carrier_hz = hz;
-        uart2_puts("OK:CARRIER");
+    }
 
-    } else if (strncmp(cmd, "VOL:", 4) == 0) {
-        uint8_t v = (uint8_t)atoi(cmd + 4);
-        if (v > 63) v = 63;
-        ad5220_set_volume(v);
-        uart2_puts("OK:VOL");
-
-    } else if (strncmp(cmd, "RGB_A:", 6) == 0) {
-        uint8_t r = 0, g = 0, b = 0;
-        sscanf(cmd + 6, "%hhu,%hhu,%hhu", &r, &g, &b);
-        rgb_target[0] = r; rgb_target[1] = g; rgb_target[2] = b;
-        uart2_puts("OK:RGB_A");
-
-    } else if (strncmp(cmd, "RGB_B:", 6) == 0) {
-        uint8_t r = 0, g = 0, b = 0;
-        sscanf(cmd + 6, "%hhu,%hhu,%hhu", &r, &g, &b);
-        rgb_target[3] = r; rgb_target[4] = g; rgb_target[5] = b;
-        uart2_puts("OK:RGB_B");
-
-    } else if (strncmp(cmd, "RGB_AB:", 7) == 0) {
-        uint8_t r = 0, g = 0, b = 0;
-        sscanf(cmd + 7, "%hhu,%hhu,%hhu", &r, &g, &b);
-        rgb_target[0] = r; rgb_target[1] = g; rgb_target[2] = b;
-        rgb_target[3] = r; rgb_target[4] = g; rgb_target[5] = b;
-        uart2_puts("OK:RGB_AB");
-
-    } else if (strcmp(cmd, "STATUS") == 0) {
-        char buf[64];
-        /* send beat freq as integer*10 to avoid float formatting */
-        uint16_t beat_x10 = (uint16_t)(beat_hz * 10.0f);
-        uint16_t carr_x10 = (uint16_t)(carrier_hz * 10.0f);
-        sprintf(buf, "BEAT:%u.%u CARRIER:%u.%u VOL:%u",
-            beat_x10 / 10, beat_x10 % 10,
-            carr_x10 / 10, carr_x10 % 10,
-            volume_steps);
-        uart2_puts(buf);
-
-    } else if (strcmp(cmd, "RESET") == 0) {
-        target_beat = BASELINE_BEAT_HZ;
-        ramp_step = 0.0006f;
-        seq_state = SEQ_BASELINE;
-        sequencer_tick = 0;
-        next_spike = SPIKE_INTERVAL;
-        next_dip = DIP_INTERVAL;
-        uart2_puts("OK:RESET");
-
-    } else {
-        uart2_puts("ERR:UNKNOWN");
+    /* --- publish LED phase increment + duty thresholds for the ISR ---
+       full cycle = 2^32 of phase; per sample: beat_hz * 2^32 / 8000
+       = beat_hz * 536870.912                                        */
+    {
+        uint32_t inc = (uint32_t)(beat_hz * 536870.912f);
+        uint32_t dh  = ((uint32_t)32768 * duty_pct) / 100;
+        uint32_t df  = ((uint32_t)65536 * duty_pct) / 100;
+        if (df > 65535) df = 65535;
+        IEC0bits.T1IE = 0;
+        led_phase_inc = inc;
+        duty_half = (uint16_t)dh;
+        duty_full = (uint16_t)df;
+        IEC0bits.T1IE = 1;
     }
 }
 
-/* ─────────────────────────────────────────────────────────────────────
-   Hardware init
-   ───────────────────────────────────────────────────────────────────── */
+/* ═══════════════ command parser ════════════════════════════════ */
+static void process_command(char *cmd) {
+    if (!strncmp(cmd, "BEAT:", 5)) {
+        float hz = parse_float(cmd+5);
+        if (hz >= 0.5f && hz <= 40.0f) {
+            ramp_per_ctrl = (hz > beat_hz ? hz - beat_hz : beat_hz - hz)
+                            / (float)RAMP_TICKS;
+            if (ramp_per_ctrl < 0.001f) ramp_per_ctrl = 0.05f;
+            target_beat = hz;
+            uart2_puts("OK:BEAT");
+        } else uart2_puts("ERR:RANGE");
+
+    } else if (!strncmp(cmd, "CARRIER:", 8)) {
+        float hz = parse_float(cmd+8);
+        if (hz >= 50.0f && hz <= 1500.0f) {
+            carrier_hz = hz;
+            uart2_puts("OK:CARRIER");
+        } else uart2_puts("ERR:RANGE");
+
+    } else if (!strncmp(cmd, "VOL:", 4)) {
+        float v = parse_float(cmd+4);
+        if (v >= 0 && v <= 63) { pot_set((uint8_t)v); uart2_puts("OK:VOL"); }
+        else uart2_puts("ERR:RANGE");
+
+    } else if (!strncmp(cmd, "RGB_AB:", 7)) {
+        uint8_t c[3];
+        if (parse_rgb(cmd+7, c)) {
+            memcpy(rgb_target,   c, 3);
+            memcpy(rgb_target+3, c, 3);
+            uart2_puts("OK:RGB_AB");
+        } else uart2_puts("ERR:PARSE");
+
+    } else if (!strncmp(cmd, "RGB_A:", 6)) {
+        if (parse_rgb(cmd+6, rgb_target)) uart2_puts("OK:RGB_A");
+        else uart2_puts("ERR:PARSE");
+
+    } else if (!strncmp(cmd, "RGB_B:", 6)) {
+        if (parse_rgb(cmd+6, rgb_target+3)) uart2_puts("OK:RGB_B");
+        else uart2_puts("ERR:PARSE");
+
+    } else if (!strncmp(cmd, "SEQ:", 4)) {
+        if      (!strcmp(cmd+4, "ON"))  { seq_enabled = 1; uart2_puts("OK:SEQ"); }
+        else if (!strcmp(cmd+4, "OFF")) { seq_enabled = 0; uart2_puts("OK:SEQ"); }
+        else uart2_puts("ERR:PARSE");
+
+    } else if (!strncmp(cmd, "DUTY:", 5)) {
+        float d = parse_float(cmd+5);
+        if (d >= 5.0f && d <= 100.0f) { duty_pct = (uint8_t)d; uart2_puts("OK:DUTY"); }
+        else uart2_puts("ERR:RANGE");
+
+    } else if (!strncmp(cmd, "MODE:", 5)) {
+        if      (!strcmp(cmd+5, "ALT"))   { led_mode = MODE_ALT;   uart2_puts("OK:MODE"); }
+        else if (!strcmp(cmd+5, "SYNC"))  { led_mode = MODE_SYNC;  uart2_puts("OK:MODE"); }
+        else if (!strcmp(cmd+5, "SOLID")) { led_mode = MODE_SOLID; uart2_puts("OK:MODE"); }
+        else uart2_puts("ERR:PARSE");
+
+    } else if (!strcmp(cmd, "STATUS")) {
+        char out[72], *b = out;
+        uint16_t bx10 = (uint16_t)(beat_hz    * 10.0f + 0.5f);
+        uint16_t cx10 = (uint16_t)(carrier_hz * 10.0f + 0.5f);
+        memcpy(b, "BEAT:", 5); b += 5;
+        b = put_u16(b, bx10/10); *b++ = '.'; *b++ = '0'+bx10%10;
+        memcpy(b, " CAR:", 5); b += 5;
+        b = put_u16(b, cx10/10); *b++ = '.'; *b++ = '0'+cx10%10;
+        memcpy(b, " VOL:", 5); b += 5;
+        b = put_u16(b, volume_steps);
+        memcpy(b, " MODE:", 6); b += 6;
+        {
+            const char *m = (led_mode==MODE_ALT) ? "ALT" :
+                            (led_mode==MODE_SYNC)? "SYNC" : "SOLID";
+            while (*m) *b++ = *m++;
+        }
+        memcpy(b, " SEQ:", 5); b += 5;
+        { const char *q = seq_enabled ? "ON" : "OFF"; while (*q) *b++ = *q++; }
+        memcpy(b, " DUTY:", 6); b += 6;
+        b = put_u16(b, duty_pct);
+        *b = 0;
+        uart2_puts(out);
+
+    } else if (!strcmp(cmd, "RESET")) {
+        target_beat = BASELINE_BEAT;
+        ramp_per_ctrl = 0.05f;
+        seq_state = SEQ_BASE;
+        seq_t = 0; next_spike = SPIKE_EVERY_T; next_dip = DIP_EVERY_T;
+        seq_enabled = 1; duty_pct = 100; led_mode = MODE_ALT;
+        uart2_puts("OK:RESET");
+
+    } else uart2_puts("ERR:UNKNOWN");
+}
+
+/* ═══════════════ init ══════════════════════════════════════════ */
 static void init_gpio(void) {
-    /* Set PORTB pins as digital outputs:
-       RB2 (/CS), RB3 (U/D), RB4-RB9 (RGB LEDs), RB10 (TPA6132A2 EN) */
-    ADPCFG = 0xFFFF;                /* all ANx pins as digital */
-    TRISBbits.TRISB2  = 0;         /* /CS  out */
-    TRISBbits.TRISB3  = 0;         /* U/D  out */
-    TRISBbits.TRISB4  = 0;         /* A_R  out */
-    TRISBbits.TRISB5  = 0;         /* A_G  out */
-    TRISBbits.TRISB6  = 0;         /* A_B  out */
-    TRISBbits.TRISB7  = 0;         /* B_R  out */
-    TRISBbits.TRISB8  = 0;         /* B_G  out */
-    TRISBbits.TRISB9  = 0;         /* B_B  out */
-    TRISBbits.TRISB10 = 0;         /* TPA EN out */
+    ADPCFG = 0xFFFF;                       /* all ANx digital        */
+    TRISBbits.TRISB2 = 0;  TRISBbits.TRISB3 = 0;
+    TRISBbits.TRISB4 = 0;  TRISBbits.TRISB5 = 0;
+    TRISBbits.TRISB6 = 0;  TRISBbits.TRISB7 = 0;
+    TRISBbits.TRISB8 = 0;  TRISBbits.TRISB9 = 0;
+    TRISBbits.TRISB10 = 0;
+    TRISFbits.TRISF4 = 1;  TRISFbits.TRISF5 = 0;   /* U2RX in, U2TX out */
+    TRISFbits.TRISF6 = 0;                          /* pot CLK           */
+    TRISDbits.TRISD0 = 0;  TRISDbits.TRISD1 = 0;   /* OC1/OC2           */
 
-    /* PORTF: RF3=SDO1 out, RF4=RX2 in, RF5=TX2 out, RF6=SCK1 out */
-    TRISFbits.TRISF3 = 0;          /* SDO1 out */
-    TRISFbits.TRISF4 = 1;          /* U2RX in  */
-    TRISFbits.TRISF5 = 0;          /* U2TX out */
-    TRISFbits.TRISF6 = 0;          /* SCK1 out */
-
-    /* PORTD: RD0=OC1 out, RD1=OC2 out */
-    TRISDbits.TRISD0 = 0;
-    TRISDbits.TRISD1 = 0;
-
-    /* Initial states */
-    LATBbits.LATB2  = 1;           /* /CS deasserted */
-    LATBbits.LATB3  = 1;           /* U/D default up */
-    LATBbits.LATB10 = 1;           /* TPA6132A2 EN HIGH — amp enabled */
-    LATB &= ~0x03F0;               /* LEDs off (RB4-RB9 = 0) */
-    LATFbits.LATF6  = 0;           /* SCK idle low */
+    POT_CS_HI(); POT_UP(); POT_CLK_LO();
+    LATB &= ~0x03F0;                       /* LEDs off               */
+    LATBbits.LATB10 = 1;                   /* TPA6132A2 EN — amp ON  */
 }
 
 static void init_pwm(void) {
-    /* OC1 and OC2: PWM mode, period ~256kHz */
-    OC1CON = 0x0006;               /* PWM mode, no fault */
-    OC2CON = 0x0006;
-    OC1R  = 0;                     /* initial duty = 0 */
-    OC1RS = 0;
-    OC2R  = 0;
-    OC2RS = 0;
-    /* Timer2 as PWM timebase */
-    T2CONbits.TCKPS = 0b00;        /* 1:1 prescaler */
-    PR2 = PWM_PERIOD;              /* period register */
-    T2CONbits.TON = 1;
-    OC1CONbits.OCM = 0b110;        /* PWM mode, fault disabled */
+    OC1CON = 0; OC2CON = 0;
+    OC1R = 0; OC1RS = 0; OC2R = 0; OC2RS = 0;
+    PR2 = PWM_PERIOD;
+    T2CONbits.TCKPS = 0;
+    OC1CONbits.OCM = 0b110;                /* PWM, fault off         */
     OC2CONbits.OCM = 0b110;
+    T2CONbits.TON = 1;
 }
 
 static void init_timer1(void) {
-    /* Timer1: 8kHz ISR for DDS */
     T1CON = 0;
-    T1CONbits.TCKPS = 0b00;        /* 1:1 prescaler */
-    PR1 = (uint16_t)(FCY / FSAMP - 1);  /* = 2499 for 8kHz at 20MHz */
-    IPC0bits.T1IP = 6;             /* priority 6 */
+    PR1 = (uint16_t)(FCY / FSAMP - 1);     /* 2499 @ 20 MIPS         */
+    IPC0bits.T1IP = 6;
     IFS0bits.T1IF = 0;
     IEC0bits.T1IE = 1;
     T1CONbits.TON = 1;
 }
 
 static void init_uart2(void) {
-    /* UART2 at 9600 baud for ESP32 communication */
-    U2BRG  = (uint16_t)(FCY / (16UL * UART_BAUD) - 1);  /* = 129 */
-    U2MODE = 0x8000;               /* UART2 enabled, 8N1 */
-    U2STA  = 0x0400;               /* TX enabled */
+    U2BRG = (uint16_t)(FCY / (16UL * 9600UL) - 1);   /* 129 */
+    U2MODE = 0x8000;
+    U2STA  = 0x0400;
     IFS1bits.U2RXIF = 0;
-    IEC1bits.U2RXIE = 1;           /* enable RX interrupt */
+    IEC1bits.U2RXIE = 1;
 }
 
-/* ─────────────────────────────────────────────────────────────────────
-   main
-   ───────────────────────────────────────────────────────────────────── */
+/* ═══════════════ main ══════════════════════════════════════════ */
 int main(void) {
-    /* Initial phase increments: 200Hz carrier, 4Hz beat */
     phase_inc_L = freq_to_inc(carrier_hz);
     phase_inc_R = freq_to_inc(carrier_hz + beat_hz);
 
     init_gpio();
     init_pwm();
     init_uart2();
-    init_timer1();      /* start last — ISR will begin firing */
+    pot_sync_boot(32);          /* known volume before audio starts  */
+    init_timer1();              /* ISR live from here                */
 
-    /* AD5220 powers up at midscale (step 32); this is a no-op but keeps
-       software state explicit and handles any power-up variation */
-    ad5220_set_volume(32);
+    uart2_puts("READY:BINAURAL_GOGGLE_V2.2");
 
-    /* Send boot message to ESP32 */
-    uart2_puts("READY:BINAURAL_GOGGLE_V2");
-
-    /* Main loop: process UART commands */
     while (1) {
-        if (cmd_ready) {
-            cmd_ready = 0;
-            process_command(cmd_buf);
-        }
-        /* IDLE — all real work happens in Timer1 ISR */
-        Idle();
+        if (ctrl_flag) { ctrl_flag = 0; control_tick(); }
+        if (cmd_ready) { cmd_ready = 0; process_command(cmd_buf); }
     }
-
     return 0;
 }
