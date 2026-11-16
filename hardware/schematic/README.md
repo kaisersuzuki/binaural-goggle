@@ -2,11 +2,11 @@
 
 | File | Description |
 |---|---|
-| `binaural_goggle_schematic_rev01.html` | Rev 0.1 — single-color red LEDs, no ESP32 |
-| `binaural_goggle_schematic_rev02.png` | Rev 0.2 — adds ESP32, RGB LEDs, UART link, PDIP-40 dsPIC |
+| `Schematic_AUDIO-CONTROLLER_2026-04-19.pdf` | **Rev 1.1, as manufactured.** 4 sheets: power and connectors, MCUs, lights, sound |
+| `SCH_AUDIO-CONTROLLER_2026-04-19.json` | EasyEDA schematic source for rev 1.1 |
+| `PCB_PCB_AUDIO-CONTROLLER_2_2026-04-19.json` | EasyEDA PCB source for rev 1.1 |
+| `Gerber_AUDIO-CONTROLLER_PCB_AUDIO-CONTROLLER_2_2026-04-19.zip` | Gerbers |
+| `Autorouter_PCB_AUDIO-CONTROLLER_2_2026-04-19.dsn` | Autorouter export |
+| `binaural_goggle_schematic_rev01.html`, `..._rev02.png` | Early concept drawings. They do not match the board |
 
-The HTML version is interactive (open in any browser). The PNG is the current revision and what's being implemented.
-
-## Source files (TODO)
-
-The EasyEDA Pro project source (`.epro`, `.json`) belongs in `../pcb/` and will be added once the layout service finalizes the design.
+Known faults in rev 1.1 are listed in [`docs/hardware_review_rev1.1.md`](../../docs/hardware_review_rev1.1.md).

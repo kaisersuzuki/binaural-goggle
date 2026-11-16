@@ -1,52 +1,55 @@
-# dsPIC30F4013 Firmware
+# dsPIC30F4013 firmware (v3.0)
 
-The audio + LED engine. Generates binaural beats via DDS, drives RGB LEDs via soft-PWM, takes commands from the ESP32 over UART1.
+The audio and light engine. Generates the two tones, drives the six LED channels, sets the volume pots, and takes text commands from the ESP32-S3 over UART1.
 
-## Toolchain
+v3.0 was rewritten against the netlist of the rev 1.1 board. The reasons are in [`docs/hardware_review_rev1.1.md`](../../docs/hardware_review_rev1.1.md).
 
-- **MPLAB X IDE** (free from microchip.com)
-- **XC16 compiler** v2.x or later (free)
-- **PICkit 4** programmer (~$50, DigiKey)
+## Files
 
-## Building
+| File | Purpose |
+|---|---|
+| `src/dspic_firmware.c` | The firmware. The header comment has the pin map and protocol summary |
+| `src/dds_tables.h` | Generated sine, volume and pot tables. Must sit next to the `.c` file |
+| `tools/gen_tables.py` | Regenerates `dds_tables.h` if the volume law or component values change |
+| `test/host_test.c`, `test/xc.h` | PC-side test of the firmware logic (no chip needed) |
 
-1. Open MPLAB X IDE → **File → New Project → Microchip Embedded → Standalone Project**
-2. Family: **16-bit DSCs (dsPIC30)**, Device: **dsPIC30F4013**
-3. Tool: **PICkit 4**, Compiler: **XC16**
-4. Project name: `binaural_goggle_dspic`
-5. Right-click *Source Files* → Add Existing Item → select `src/dspic_firmware.c`
-6. **Build** (hammer icon)
+## Build and flash
 
-## Flashing
+MPLAB X + XC16, optimisation level 1, PICkit 4 on header H1. Steps and the H1 wiring are in [`docs/programming.md`](../../docs/programming.md).
 
-1. Connect PICkit 4 to your Mac via USB
-2. Connect PICkit 4 cable to PCB **J1** (5-pin ICSP header)
-3. Pin orientation on J1: MCLR / VDD / VSS / PGD / PGC (pin 1 marked)
-4. In MPLAB X click the **Make and Program Device** icon (downward arrow)
-5. Watch the output pane — should see "Programming complete"
+Not yet compiled with XC16 (it was not available when v3.0 was written). Register and configuration names were checked against Microchip's dsPIC30F4013 device header. If the build reports an unknown name, that is the place to look.
 
-## Configuration
+## Settings worth knowing
 
-Edit constants near the top of `dspic_firmware.c`:
+Near the top of `dspic_firmware.c`:
 
 ```c
-#define SAMPLE_RATE         8000U     // DDS interrupt rate
-#define DEFAULT_CARRIER_HZ  128       // Initial carrier
-#define DEFAULT_BEAT_HZ     4.0f      // Initial beat
+#define DEFAULT_BEAT    4.0f     /* Hz */
+#define DEFAULT_CARRIER 200.0f   /* Hz */
+#define DEFAULT_VOL     30U      /* percent */
+#define AMP_AT_BOOT     1        /* 0 if the TPA6132A2 is bypassed */
 ```
 
-The runtime command interface (over UART1 from the ESP32) lets you change these without reflashing — see [`docs/uart_protocol.md`](../../docs/uart_protocol.md).
+Everything else is set at run time; see [`docs/uart_protocol.md`](../../docs/uart_protocol.md).
 
-## Pin map
-
-See header comment block in `src/dspic_firmware.c` for the full pin assignments. Summary:
+## Pin map (rev 1.1)
 
 | Pin | Function |
 |---|---|
-| RD0 (OC1) | Left audio PWM |
-| RD1 (OC2) | Right audio PWM |
-| RF6/RF7 + RB2/RB3 | SPI to AD5220 volume pot |
-| RF2/RF3 | UART1 to ESP32 |
-| RG2/3/4 | Left eye R/G/B LEDs |
-| RG6/7/8 | Right eye R/G/B LEDs |
-| AN0 | Battery voltage divider |
+| 34 RD0 (OC1) / 33 RD1 (OC2) | Left / right audio PWM, 31.25 kHz |
+| 4 RB2, 5 RB3, 24 RF6 | AD5220 /CS, U/D, CLK (both pots) |
+| 37 RB10 | TPA6132A2 enable |
+| 26 RF2 (U1RX), 25 RF3 (U1TX) | UART1 to the ESP32-S3 |
+| 6 RB4, 7 RB5, 8 RB6 | Eye A red, green, blue |
+| 9 RB7, 10 RB8, 38 RB9 | Eye B red, green, blue |
+| 13, 14 | 10 MHz crystal (x4 PLL, 10 MIPS) |
+| 1 | MCLR. Needs the 10 kΩ pull-up added by hand |
+
+## Running the PC-side test
+
+```sh
+cd firmware/dspic/test
+clang -std=c99 -Wall -Wextra -I. -o /tmp/host_test host_test.c -lm && /tmp/host_test
+```
+
+It checks tone frequencies, PWM range, LED timing in each mode, the command parser (including that noise gets no reply), the volume law and the sequencer. It cannot check interrupt timing or anything electrical.

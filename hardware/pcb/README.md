@@ -1,48 +1,41 @@
-# PCB Files
+# PCB rev 1.1 (AUDIO-CONTROLLER)
 
-> **Status:** Layout in progress with JLCPCB Layout Service (Atan). Gerbers will be added here once received and approved.
+Designed by Darlington PCB Design, manufactured and assembled by JLCPCB, April 2026.
 
-## What goes here
+**Read [`docs/hardware_review_rev1.1.md`](../../docs/hardware_review_rev1.1.md) before powering a board.** Rev 1.1 has design faults that need hand rework.
 
-Once the PCB design is finalized, this folder should contain:
-
-| Folder | Contents |
+| Folder / file | Contents |
 |---|---|
-| `gerbers/` | Production Gerber files (RS-274X) — what JLCPCB needs to manufacture |
-| `bom/` | Bill of materials (CSV with LCSC part numbers for each component) |
-| `cpl/` | Component Placement List (CSV with X/Y/rotation for pick-and-place) |
+| `bom/` | Bill of materials with LCSC part numbers |
+| `cpl/` | Pick-and-place file |
+| `images/` | 3D renders |
+| `../schematic/PCB_PCB_AUDIO-CONTROLLER_2_2026-04-19.json` | EasyEDA PCB source |
+| `../schematic/SCH_AUDIO-CONTROLLER_2026-04-19.json` | EasyEDA schematic source |
+| `../schematic/Schematic_AUDIO-CONTROLLER_2026-04-19.pdf` | Schematic, 4 sheets |
+| `../schematic/Gerber_...zip` | Gerbers as sent to JLCPCB |
 
-Plus the EasyEDA Pro source files:
+## Main parts
 
-- `binaural_goggle.epro` — EasyEDA Pro project file
-- `schematic.json` — schematic source
-- `pcb.json` — PCB layout source
+| Ref | Part | Role |
+|---|---|---|
+| U1 | dsPIC30F4013-20E/P, PDIP-40 in a socket | Audio and LED engine |
+| U3 | ESP32-S3-WROOM-1-N8R8 | WiFi and web page |
+| U8 | TPA6132A2 | Headphone amplifier |
+| U13, U14 | AD5220BRZ50 | Volume pots, 128 steps, up/down control |
+| U2, U15 | 74HC14, DIP-14 | LED buffers (two inverters per channel) |
+| Q1 to Q6 | 2N3904 (SOT-23) | LED low-side switches |
+| U6 | LD1117AG-3.3 | 3.3 V regulator |
+| U4 | AMS1117-5.0 | 5 V regulator |
+| U5 | MAX8212 | Supply monitor. Must be disconnected, see the review |
+| U12 | 10 MHz crystal | dsPIC clock |
 
-## Specs
+## Headers
 
-- 82 × 60 mm
-- 2-layer, 1.6mm thick, 1oz copper
-- ENIG finish (or HASL for cheaper)
-- 4× M3 mounting holes at corners (3.5mm clearance, non-plated)
-- Top side components only
-
-## Key components
-
-- **U1** dsPIC30F4013 — PDIP-40, socketed (DIP socket on PCB, chip inserted by user, not assembled by JLCPCB)
-- **U2** ESP32-WROOM-32E — SMD module, JLCPCB assembled
-- **U3** TPA6132A2 (or NTE941M) — headphone amp
-- **U4** AD5220 — SPI digital pot
-- **U5/U6** MAX603 ×2 — 3.3V and 5V LDOs
-- **U7/U8** NTE74HC14 ×2 — Schmitt inverters for LED drivers
-- 6× 2N3904 — RGB LED drivers
-- All passives 0603 SMD
-
-## Programming headers
-
-Two headers must be exposed on the board:
-
-1. **J1 — dsPIC ICSP**: 2×3 pin, 2.54mm. Pinout: MCLR / VDD / VSS / PGD / PGC / NC
-2. **JESP — ESP32 programming**: 1×6 pin, 2.54mm. Pinout: GND / 3V3 / EN / IO0 / TX0 / RX0
-   Plus BOOT and RESET momentary pushbuttons (or auto-reset transistor pair)
-
-See `docs/programming.md` for use.
+| Ref | Pins | Function |
+|---|---|---|
+| CN1 | 1 GND, 2 VIN | DC input, 7.5 to 9 V regulated |
+| H1 | 1 MCLR, 2 PGD, 3 3V3, 4 PGC, 5 GND, 6 n/c | dsPIC programming (2x3) |
+| H2 | 1 LED anode (via 1.2 kΩ from VIN), 2 GND | Power indicator LED |
+| H3 | 1 GND, 2 3V3, 3 EN, 4 IO0, 5 TX0, 6 RX0 | ESP32-S3 programming |
+| H4 | 1 GND, 2 OUTR, 3 OUTL | Headphone jack |
+| H5 | 1 A_R, 2 A_G, 3 A_B, 4 +5V, 5 GND, 6 B_R, 7 B_G, 8 B_B | Goggle LEDs (cathodes switched, common anode on +5V) |

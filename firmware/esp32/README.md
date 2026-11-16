@@ -1,57 +1,48 @@
-# ESP32 Firmware
+# ESP32-S3 firmware (v3.0)
 
-WiFi controller and web UI host. Receives commands from a browser over WiFi, translates them to UART ASCII commands for the dsPIC.
+WiFi access point and web page. Turns browser actions into text commands for the dsPIC.
 
-> **Status:** Smoke-test foundation only. Verified working end-to-end on ESP32 DevKitC (April 2026). Production version will add full command set, OTA updates, SPIFFS-served UI, and STA mode fallback.
+The module on the rev 1.1 board is an **ESP32-S3-WROOM-1-N8R8**. Earlier versions of this project were written for an ESP32-WROOM-32E and will not flash or run.
 
-## Toolchain
+## Build and flash
 
-- **VS Code** with the **PlatformIO IDE** extension
-- **CH340 USB-UART driver** (Mac): `brew install --cask wch-ch34x-usb-serial-driver`
-
-## Building & flashing (during development)
-
-1. Open this folder (`firmware/esp32/`) in VS Code with PlatformIO installed
-2. Plug in the ESP32 DevKitC via USB
-3. Click the **→** (Upload) icon in the bottom blue status bar
-4. Click the **🔌** (Serial Monitor) icon to watch logs
-
-## Flashing the final PCB (one-time)
-
-The production PCB exposes a 6-pin programming header with `GND / 3V3 / EN / IO0 / TX0 / RX0`. To flash the initial firmware:
-
-1. Connect a USB-UART adapter (FTDI or CP2102) to the header
-2. Hold BOOT, tap RESET, release BOOT to enter download mode
-3. `pio run --target upload` (or use the upload arrow in VS Code)
-4. After this first flash, all subsequent updates happen via WiFi (OTA) — see below
-
-## Using the web UI
-
-1. After flashing, the ESP32 creates a WiFi network: **BinauralGoggle** (password: `meditate123`)
-2. Connect from any phone/laptop
-3. Browse to `http://192.168.4.1`
-4. Adjust sliders, hit APPLY
-5. Watch the serial monitor — you'll see the UART command that would be sent to the dsPIC
-
-## Architecture
-
-```
-[Browser] ─HTTP─→ [ESP32 web server] ─UART2─→ [dsPIC30F4013]
-              ←─events─                ←──────
+```sh
+cd firmware/esp32
+pio run -e goggle                 # build
+pio run -e goggle -t upload       # first flash, USB-UART adapter on H3
+pio run -e goggle_ota -t upload   # later, over WiFi
 ```
 
-- **Web server:** ESPAsyncWebServer on port 80
-- **UI:** Single-page HTML/CSS/JS (currently inline, will move to SPIFFS)
-- **UART bridge:** Translates JSON/form params to ASCII commands per [UART protocol](../../docs/uart_protocol.md)
-- **OTA:** ArduinoOTA library, firmware updates via WiFi after initial flash
+Wiring for the first flash, and the board rework that must come before it, are in [`docs/programming.md`](../../docs/programming.md) and [`docs/bringup_checklist.md`](../../docs/bringup_checklist.md).
 
-## Pin map (final PCB)
+Build status: compiles cleanly with PlatformIO `espressif32`, board `esp32-s3-devkitc-1` (778 kB, 23 % of the app partition). Not yet run on the board.
 
-| ESP32 GPIO | Function |
+## Using it
+
+1. Join WiFi **BinauralGoggle** (password `AP_PASS` in `src/main.cpp`).
+2. Open `http://192.168.4.1`.
+3. The top line shows whether the dsPIC is answering. Controls send as you release them.
+
+| URL | Purpose |
 |---|---|
-| 1 (TX0)  | Programming header — initial flash only |
-| 3 (RX0)  | Programming header — initial flash only |
-| 16 (RX2) | UART2 from dsPIC TX (RF3) |
-| 17 (TX2) | UART2 to dsPIC RX (RF2) |
-| EN       | Reset (boot button) |
-| 0        | Boot mode select (boot button) |
+| `/` | Control page |
+| `/cmd?c=<COMMAND>` | Send one command, returns the dsPIC's reply or `NO REPLY` |
+| `/log` | Last 32 commands and replies |
+| `/update` | Firmware upload (user `admin`, password `OTA_PASS`) |
+
+## Pins
+
+| Module pad | GPIO | Use |
+|---|---|---|
+| TXD0 (H3 pin 5, net `TX0`) | 43 | **Receive** from the dsPIC |
+| RXD0 (H3 pin 6, net `RX0`) | 44 | **Transmit** to the dsPIC |
+| IO0 (H3 pin 4) | 0 | Boot mode strap only |
+| EN (H3 pin 3) | | Reset |
+
+The swap is deliberate: the PCB wires transmit to transmit. The firmware uses UART1 on those pins so that nothing the Arduino core prints on UART0 reaches the dsPIC. No other GPIO is connected on this board.
+
+There is no serial monitor and no VIN read-out; see the review document for why.
+
+## Changing the WiFi or update passwords
+
+Edit `AP_PASS` and `OTA_PASS` in `src/main.cpp`, and `--auth` in `platformio.ini` to match. The defaults are published in this repository, so anyone nearby who has read it can join the goggle's network.
